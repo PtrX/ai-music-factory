@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Track" ADD COLUMN "isApproved" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Track" ADD COLUMN "isRejected" BOOLEAN NOT NULL DEFAULT false;
