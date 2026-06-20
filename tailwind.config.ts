@@ -49,6 +49,13 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        surface: "var(--surface)",
+        "surface-raised": "var(--surface-raised)",
+        "surface-high": "var(--surface-high)",
+        "accent-green": "var(--accent-green)",
+        "accent-bg": "var(--accent-bg)",
+        "text-muted-s": "var(--text-muted)",
+        warning: "var(--warning)",
       },
       borderRadius: {
         lg: "var(--radius)",
