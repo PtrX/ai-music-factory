@@ -155,13 +155,27 @@ export async function assembleFullVideo(input: {
       videoSource = combinedPath
     }
 
-    const srtFilter = srtPath ? `-vf "subtitles='${srtPath.replace(/'/g, "'\\''")}'"` : ""
-    execSync(
-      `ffmpeg -y -i "${videoSource}" -i "${audioPath}" ` +
-      `-map 0:v -map 1:a ${srtFilter} ` +
-      `-c:v libx264 -preset fast -b:v 12000k -c:a aac -b:a 320k -shortest "${outputPath}"`,
-      { timeout: 600_000, stdio: "pipe" }
-    )
+    const audioDur = await getVideoDuration(audioPath)
+    const videoDur = await getVideoDuration(videoSource)
+
+    const srtFilter = srtPath ? `,subtitles='${srtPath.replace(/'/g, "\\'")}'` : ""
+
+    if (videoDur < audioDur) {
+      // Loop video to cover full audio length
+      execSync(
+        `ffmpeg -y -stream_loop -1 -i "${videoSource}" -i "${audioPath}" ` +
+        `-map 0:v -map 1:a -vf "setpts=PTS-STARTPTS${srtFilter}" ` +
+        `-c:v libx264 -preset fast -b:v 12000k -c:a aac -b:a 320k -t ${audioDur} "${outputPath}"`,
+        { timeout: 600_000, stdio: "pipe" }
+      )
+    } else {
+      execSync(
+        `ffmpeg -y -i "${videoSource}" -i "${audioPath}" ` +
+        `-map 0:v -map 1:a -vf "setpts=PTS-STARTPTS${srtFilter}" ` +
+        `-c:v libx264 -preset fast -b:v 12000k -c:a aac -b:a 320k -t ${audioDur} "${outputPath}"`,
+        { timeout: 600_000, stdio: "pipe" }
+      )
+    }
 
     return outputPath
   } finally {

@@ -27,6 +27,12 @@ export async function POST(
     const body = await req.json().catch(() => ({}))
     const visualTrack = body.visualTrack || "auto"
 
+    // Cancel any existing active jobs for this track to avoid duplicates
+    await prisma.videoJob.updateMany({
+      where: { trackId: track.id, status: { in: ["queued", "rendering"] } },
+      data: { status: "cancelled" },
+    })
+
     const videoJob = await prisma.videoJob.create({
       data: {
         trackId: track.id,

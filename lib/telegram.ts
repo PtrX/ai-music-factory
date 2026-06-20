@@ -166,23 +166,28 @@ export async function sendVideoReadyCard(
       form.append("parse_mode", "Markdown")
       form.append("reply_markup", JSON.stringify(keyboard))
       form.append("photo", thumbBuffer, { filename: "thumb.jpg", contentType: "image/jpeg" })
-      // Convert FormData to Buffer for fetch
       const formHeaders = form.getHeaders()
       const formBuffer = form.getBuffer()
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      const photoRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
         method: "POST",
         headers: { ...formHeaders, "Content-Length": String(formBuffer.length) },
         body: formBuffer as unknown as BodyInit,
       })
-      return
-    } catch { /* fall through to text */ }
+      const photoJson = await photoRes.json() as { ok: boolean; description?: string }
+      if (photoJson.ok) return
+      console.error("[Telegram] sendPhoto failed:", photoJson.description)
+    } catch (err) {
+      console.error("[Telegram] sendPhoto error:", err)
+    }
   }
 
-  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+  const msgRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: "Markdown", reply_markup: keyboard }),
   })
+  const msgJson = await msgRes.json() as { ok: boolean; description?: string }
+  if (!msgJson.ok) console.error("[Telegram] sendMessage failed:", msgJson.description)
 }
 
 export async function sendYouTubeLiveCard(youtubeUrl: string, title: string): Promise<void> {

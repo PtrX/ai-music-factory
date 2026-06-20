@@ -31,6 +31,7 @@ export interface TrackStructure {
   totalDurationSec: number
   tiktokBestStartSec: number
   tiktokBestEndSec: number
+  beatTimes: number[]
 }
 
 export interface AiAnalysisResult {
@@ -140,6 +141,7 @@ function mergeLibrosaWithLabels(
     totalDurationSec: librosa.duration,
     tiktokBestStartSec: librosa.tiktokBestStartSec,
     tiktokBestEndSec:   librosa.tiktokBestEndSec,
+    beatTimes:        librosa.beatTimes ?? [],
   }
 }
 
