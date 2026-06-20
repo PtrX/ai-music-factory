@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { enqueue } from "@/lib/queue"
 import {
   sendTelegramNotification,
   answerCallbackQuery,
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
         `/approve TRACK_ID — Track approven\n` +
         `/reject TRACK_ID — Track ablehnen\n` +
         `/generate PROJECT_ID — Alle Varianten generieren\n` +
+        `/videos — Ausstehende Video-Freigaben\n` +
         `/help — Diese Hilfe`
       )
       break
@@ -53,6 +55,7 @@ export async function POST(req: NextRequest) {
     case "/approve": await handleApproveCmd(args[0]); break
     case "/reject":  await handleRejectCmd(args[0]); break
     case "/generate":await handleGenerateCmd(args[0]); break
+    case "/videos":  await handleVideosCmd(); break
   }
 
   return NextResponse.json({ ok: true })
@@ -68,6 +71,44 @@ async function handleCallbackQuery(cq: {
   const data = cq.data ?? ""
   const chatId = String(cq.message?.chat?.id ?? CHAT_ID)
   const messageId = cq.message?.message_id ?? 0
+
+  // Video job actions
+  if (data.startsWith("video_approve_")) {
+    const jobId = data.replace("video_approve_", "")
+    try {
+      await fetch(`${APP_URL}/api/video-jobs/${jobId}/approve`, { method: "POST" })
+      await answerCallbackQuery(cq.id, "✅ Wird hochgeladen...")
+    } catch {
+      await answerCallbackQuery(cq.id, "Fehler beim Freigeben")
+    }
+    return
+  }
+
+  if (data.startsWith("video_reject_")) {
+    const jobId = data.replace("video_reject_", "")
+    try {
+      await fetch(`${APP_URL}/api/video-jobs/${jobId}/reject`, { method: "POST" })
+      await answerCallbackQuery(cq.id, "❌ Verworfen")
+    } catch {
+      await answerCallbackQuery(cq.id, "Fehler")
+    }
+    return
+  }
+
+  if (data.startsWith("video_rerender_")) {
+    const jobId = data.replace("video_rerender_", "")
+    try {
+      const videoJob = await prisma.videoJob.findUnique({ where: { id: jobId } })
+      if (videoJob) {
+        await prisma.videoJob.update({ where: { id: jobId }, data: { status: "queued", outputPath: null, introPath: null } })
+        await enqueue("intro_render", null, { trackId: videoJob.trackId, videoJobId: jobId })
+      }
+      await answerCallbackQuery(cq.id, "🔄 Neu in Warteschlange")
+    } catch {
+      await answerCallbackQuery(cq.id, "Fehler")
+    }
+    return
+  }
 
   const [action, trackId] = data.split(":")
 
@@ -213,6 +254,29 @@ async function handleRejectCmd(trackId: string | undefined) {
   if (!track) { await sendTelegramNotification(`Track \`${trackId}\` nicht gefunden.`); return }
   await prisma.track.update({ where: { id: trackId }, data: { isRejected: true, isApproved: false } })
   await sendTelegramNotification(`❌ Track \`${trackId.slice(-6)}\` abgelehnt.`)
+}
+
+async function handleVideosCmd() {
+  const pendingJobs = await prisma.videoJob.findMany({
+    where: { status: "ready" },
+    include: { track: { include: { variant: { include: { project: true } } } } },
+    orderBy: { createdAt: "asc" },
+    take: 10,
+  })
+
+  if (pendingJobs.length === 0) {
+    await sendTelegramNotification("📋 Keine Videos zur Freigabe ausstehend.")
+    return
+  }
+
+  const lines = pendingJobs.map(j => {
+    const title = j.track.variant.project.title
+    const version = j.track.versionName || "Mix"
+    return `• *${title}* — ${version} \`${j.id.slice(-6)}\``
+  })
+
+  const msg = `📋 *Ausstehende Videos (${pendingJobs.length})*\n\n${lines.join("\n")}\n\n_Approve via: /approve\\_video [id]_`
+  await sendTelegramNotification(msg)
 }
 
 async function handleGenerateCmd(projectId: string | undefined) {

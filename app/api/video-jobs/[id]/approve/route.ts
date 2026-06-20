@@ -11,8 +11,8 @@ export async function POST(
     if (!job) {
       return NextResponse.json({ error: "Not found", code: "NOT_FOUND" }, { status: 404 })
     }
-    if (job.status !== "done") {
-      return NextResponse.json({ error: "Video not ready", code: "VALIDATION_ERROR" }, { status: 400 })
+    if (job.status !== "ready") {
+      return NextResponse.json({ error: "Video not ready for approval", code: "VALIDATION_ERROR" }, { status: 400 })
     }
 
     await prisma.videoJob.update({

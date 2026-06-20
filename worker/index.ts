@@ -1,5 +1,6 @@
 import * as fs from "fs/promises"
 import * as path from "path"
+import { execSync } from "child_process"
 import NodeID3 from "node-id3"
 import { prisma } from "@/lib/db"
 import { dequeue, enqueue, markDone, markFailed, resetStaleJobs } from "@/lib/queue"
@@ -13,7 +14,8 @@ import { extractLyricsFromAudio, extractLyricsWithTimestamps, extractLyricsGemin
 import { buildDirectives, generateArtistIdentity } from "@/lib/visual-director"
 import { fetchAndCacheSunoCredits } from "@/lib/system-status"
 import { findClipForDirective } from "@/lib/clip-library"
-import { assembleVideo } from "@/lib/video-assembler"
+import { assembleVideo, assembleFullVideo } from "@/lib/video-assembler"
+import { renderIntro } from "@/lib/intro-renderer"
 import { uploadToYouTube, buildYouTubeDescription } from "@/lib/youtube-client"
 import { sendTelegramNotification, sendTrackCard } from "@/lib/telegram"
 
@@ -539,31 +541,68 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
 
   const directives = buildDirectives(structure, identityData, project.genre)
 
+  const recentlyUsed = new Set<string>()
   const clips = new Map<number, import("@/lib/clip-library").ClipResult>()
   for (let i = 0; i < directives.length; i++) {
-    const clip = await findClipForDirective(directives[i], project.id)
-    if (clip) clips.set(i, clip)
+    const clip = await findClipForDirective(directives[i], project.id, recentlyUsed)
+    if (clip) {
+      clips.set(i, clip)
+      recentlyUsed.add(clip.id)
+      if (recentlyUsed.size > 8) {
+        const first = recentlyUsed.values().next().value
+        if (first) recentlyUsed.delete(first)
+      }
+    }
   }
 
-  const outputPath = `outputs/videos/${track.id}-video.mp4`
-  const fullOutputPath = path.join(project.folderPath, outputPath)
+  const brollPath = path.join(project.folderPath, `outputs/videos/${track.id}-broll.mp4`)
   await assembleVideo({
     audioPath: path.join(project.folderPath, track.audioPath),
     directives,
     clips,
     identity: identityData,
-    outputPath: fullOutputPath,
+    outputPath: brollPath,
     title: `${project.title} — ${track.versionName || "Mix"}`,
   })
 
-  await prisma.videoJob.update({
-    where: { id: videoJobId },
-    data: { status: "done", outputPath },
+  const videoJob = await prisma.videoJob.findUnique({ where: { id: videoJobId } })
+  if (!videoJob) throw new Error("VideoJob not found")
+
+  const introPath = videoJob.introPath ? path.join(project.folderPath, videoJob.introPath) : null
+  const srtPath = track.srtPath ? path.join(project.folderPath, track.srtPath) : null
+  const finalOutputPath = path.join(project.folderPath, `outputs/videos/${track.id}-final.mp4`)
+
+  await assembleFullVideo({
+    introPath,
+    brollPath,
+    audioPath: path.join(project.folderPath, track.audioPath),
+    srtPath,
+    outputPath: finalOutputPath,
   })
 
-  await sendTelegramNotification(
-    `🎬 Video fertig: *${project.title}*\n` +
-    `[Preview + Freigabe](${process.env.NEXT_PUBLIC_APP_URL}/projects/${project.id})`
+  const thumbnailPath = path.join(project.folderPath, `outputs/videos/${track.id}-thumb.jpg`)
+  try {
+    execSync(
+      `ffmpeg -y -ss 3 -i "${finalOutputPath}" -frames:v 1 -q:v 2 "${thumbnailPath}"`,
+      { timeout: 30_000, stdio: "pipe" }
+    )
+  } catch { /* thumbnail optional */ }
+
+  await prisma.videoJob.update({
+    where: { id: videoJobId },
+    data: {
+      status: "ready",
+      outputPath: path.relative(project.folderPath, finalOutputPath),
+    },
+  })
+
+  const { sendVideoReadyCard } = await import("@/lib/telegram")
+  const thumbExists = await fs.access(thumbnailPath).then(() => true).catch(() => false)
+  await sendVideoReadyCard(
+    { id: videoJobId },
+    { versionName: track.versionName, id: track.id },
+    { title: project.title, id: project.id },
+    thumbExists ? thumbnailPath : undefined
   )
 }
 
@@ -606,6 +645,57 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
     where: { id: videoJobId },
     data: { status: "done", youtubeVideoId: videoId, youtubeUrl: url },
   })
+
+  const { sendYouTubeLiveCard } = await import("@/lib/telegram")
+  await sendYouTubeLiveCard(url, `${project.title} — ${track.versionName || "Mix"}`)
+}
+
+async function handleIntroRenderJob(job: { id: string; payload: string; variantId: string | null }) {
+  const { trackId, videoJobId } = JSON.parse(job.payload)
+
+  await prisma.videoJob.update({ where: { id: videoJobId }, data: { status: "rendering" } })
+
+  const track = await prisma.track.findUnique({
+    where: { id: trackId },
+    include: { variant: { include: { project: { include: { artistIdentity: true } } } } },
+  })
+  if (!track || !track.structureJson) throw new Error("Track not found or missing DNA")
+
+  const structure = JSON.parse(track.structureJson)
+  const project = track.variant.project
+
+  const identity = project.artistIdentity ?? await generateArtistIdentity(project, structure)
+
+  const introSection = structure.sections?.find((s: { type: string }) => s.type === "intro")
+  const introDurationSec = introSection ? Math.min(introSection.endSec - introSection.startSec, 8) : 5
+
+  const bgDirective: import("@/lib/visual-director").VisualDirective = {
+    startSec: 0, endSec: introDurationSec, type: "intro", energy: "low",
+    clipDurationSec: introDurationSec, cutFrequency: 0,
+    effect: "cut", visualStyle: "atmospheric",
+    colorIntensity: 0.6,
+    searchQuery: `${project.genre} ${project.mood} cinematic atmospheric`,
+  }
+  const bgClip = await findClipForDirective(bgDirective, project.id)
+  if (!bgClip) throw new Error("Could not find background clip for intro")
+
+  const introOutputPath = path.join(project.folderPath, `outputs/videos/${track.id}-intro.mp4`)
+
+  await renderIntro({
+    title: project.title,
+    version: track.versionName || track.variant.name || "Original Mix",
+    accentColor: identity.colorAccent,
+    backgroundClipPath: bgClip.localPath,
+    introDurationSec,
+    outputPath: introOutputPath,
+  })
+
+  await prisma.videoJob.update({
+    where: { id: videoJobId },
+    data: { introPath: path.relative(project.folderPath, introOutputPath) },
+  })
+
+  await enqueue("video_render", null, { trackId, videoJobId, skipIntro: true })
 }
 
 async function processJob() {
@@ -633,6 +723,9 @@ async function processJob() {
         break
       case "analyze_imported_track":
         await handleAnalyzeImportedTrack(job)
+        break
+      case "intro_render":
+        await handleIntroRenderJob(job)
         break
       case "video_render":
         await handleVideoRenderJob(job)

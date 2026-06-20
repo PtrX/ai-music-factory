@@ -1,3 +1,5 @@
+import * as fs from "fs/promises"
+
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID
 
@@ -132,4 +134,68 @@ export async function editMessageReplyMarkup(
   } catch (err) {
     console.error("[Telegram] editMessageReplyMarkup failed:", err)
   }
+}
+
+export async function sendVideoReadyCard(
+  videoJob: { id: string },
+  track: { versionName: string | null; id: string },
+  project: { title: string; id: string },
+  thumbnailPath?: string
+): Promise<void> {
+  if (!BOT_TOKEN || !CHAT_ID) return
+
+  const version = track.versionName || "Original Mix"
+  const text = `🎬 *Video bereit zur Freigabe*\n\n*${escapeMarkdown(project.title)} — ${escapeMarkdown(version)}*\n\nDas Video wurde gerendert und wartet auf deine Freigabe.`
+
+  const keyboard = {
+    inline_keyboard: [[
+      { text: "✅ Zu YouTube hochladen", callback_data: `video_approve_${videoJob.id}` },
+      { text: "❌ Verwerfen", callback_data: `video_reject_${videoJob.id}` },
+    ], [
+      { text: "🔄 Neu rendern", callback_data: `video_rerender_${videoJob.id}` },
+    ]],
+  }
+
+  if (thumbnailPath) {
+    try {
+      const { default: FormData } = await import("form-data")
+      const thumbBuffer = await fs.readFile(thumbnailPath)
+      const form = new FormData()
+      form.append("chat_id", CHAT_ID)
+      form.append("caption", text)
+      form.append("parse_mode", "Markdown")
+      form.append("reply_markup", JSON.stringify(keyboard))
+      form.append("photo", thumbBuffer, { filename: "thumb.jpg", contentType: "image/jpeg" })
+      // Convert FormData to Buffer for fetch
+      const formHeaders = form.getHeaders()
+      const formBuffer = form.getBuffer()
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+        method: "POST",
+        headers: { ...formHeaders, "Content-Length": String(formBuffer.length) },
+        body: formBuffer as unknown as BodyInit,
+      })
+      return
+    } catch { /* fall through to text */ }
+  }
+
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: "Markdown", reply_markup: keyboard }),
+  })
+}
+
+export async function sendYouTubeLiveCard(youtubeUrl: string, title: string): Promise<void> {
+  if (!BOT_TOKEN || !CHAT_ID) return
+
+  const text = `🎬 *YouTube Live\\!*\n\n*${escapeMarkdown(title)}*\n\n[Video ansehen](${youtubeUrl})`
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: "MarkdownV2" }),
+  })
+}
+
+function escapeMarkdown(text: string): string {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")
 }

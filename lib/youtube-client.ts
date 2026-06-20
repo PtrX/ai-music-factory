@@ -161,5 +161,25 @@ export async function uploadToYouTube(opts: YouTubeUploadOpts): Promise<YouTubeU
 
   const uploadData = await uploadRes.json()
   const videoId: string = uploadData.id
+
+  const playlistId = process.env.YOUTUBE_PLAYLIST_ID
+  if (playlistId && videoId) {
+    try {
+      await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          snippet: {
+            playlistId,
+            resourceId: { kind: "youtube#video", videoId },
+          },
+        }),
+      })
+    } catch { /* playlist insert is optional, don't fail the upload */ }
+  }
+
   return { videoId, url: `https://youtu.be/${videoId}` }
 }

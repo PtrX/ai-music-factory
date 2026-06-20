@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-composition-variables='[
+  {"id":"title","type":"string","label":"Title","default":"AI Music Factory"},
+  {"id":"version","type":"string","label":"Version","default":"Original Mix"},
+  {"id":"credit","type":"string","label":"Credit","default":"AI Music Factory"},
+  {"id":"accent","type":"color","label":"Accent","default":"#1db954"}
+]'>
+<head>
+  <meta charset="utf-8" />
+  <title>Intro</title>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+    :root { --fg: #e8f0ee; --accent: #1db954; }
+    html, body { margin: 0; background: #0d1414; overflow: hidden; }
+    #intro { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #0d1414; }
+    #bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.55; }
+    #scrim {
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(120% 100% at 0% 100%, rgba(13,20,20,0.82) 0%, rgba(13,20,20,0.35) 40%, rgba(13,20,20,0) 72%),
+        linear-gradient(0deg, rgba(13,20,20,0.5), rgba(13,20,20,0) 45%);
+    }
+    #content {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end;
+      box-sizing: border-box; padding: 0 0 110px 110px;
+    }
+    #dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--accent); box-shadow: 0 0 14px var(--accent);
+      margin-bottom: 22px; opacity: 0;
+    }
+    #credit {
+      font-family: 'JetBrains Mono', monospace; font-weight: 500;
+      font-size: 22px; letter-spacing: 6px; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 16px; opacity: 0;
+    }
+    #title {
+      margin: 0; font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+      font-size: 88px; line-height: 1.0; color: var(--fg);
+      letter-spacing: -1px; opacity: 0;
+    }
+    #underline { width: 0; height: 4px; border-radius: 2px; background: var(--accent);
+      box-shadow: 0 0 16px var(--accent); margin: 18px 0 14px; }
+    #version {
+      font-family: 'JetBrains Mono', monospace; font-weight: 500;
+      font-size: 28px; letter-spacing: 5px; text-transform: uppercase;
+      color: var(--fg); opacity: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="intro" data-composition-id="intro" data-start="0" data-width="1920" data-height="1080" data-duration="5">
+    <video id="bg" data-start="0" data-duration="5" data-track-index="0" src="bg.mp4" muted playsinline></video>
+    <div id="scrim" class="clip" data-start="0" data-duration="5" data-track-index="1"></div>
+    <div id="content" class="clip" data-start="0" data-duration="5" data-track-index="2">
+      <div id="dot"></div>
+      <div id="credit">AI Music Factory</div>
+      <h1 id="title">Title</h1>
+      <div id="underline"></div>
+      <div id="version">Original Mix</div>
+    </div>
+  </div>
+  <script>
+    // Inject composition variables
+    const vars = {};
+    try {
+      const defs = JSON.parse(document.documentElement.dataset.compositionVariables || '[]');
+      defs.forEach(d => { vars[d.id] = d.default; });
+    } catch(e) {}
+    document.getElementById('title').textContent = vars.title || 'Title';
+    document.getElementById('version').textContent = vars.version || 'Original Mix';
+    document.getElementById('credit').textContent = vars.credit || 'AI Music Factory';
+    const accent = vars.accent || '#1db954';
+    document.documentElement.style.setProperty('--accent', accent);
+
+    // GSAP timeline
+    const tl = gsap.timeline({ delay: 0.3 });
+    tl.to('#dot', { opacity: 1, scale: 1, duration: 0.4, ease: 'power2.out' })
+      .to('#credit', { opacity: 0.9, y: 0, duration: 0.5, ease: 'power3.out' }, '-=0.1')
+      .to('#title', { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, '-=0.2')
+      .to('#underline', { width: 120, duration: 0.5, ease: 'power2.inOut' }, '-=0.1')
+      .to('#version', { opacity: 0.8, y: 0, duration: 0.4, ease: 'power3.out' }, '-=0.2');
+
+    // Initial positions for animation
+    gsap.set('#credit', { y: 20 });
+    gsap.set('#title', { y: 30 });
+    gsap.set('#version', { y: 15 });
+  </script>
+</body>
+</html>

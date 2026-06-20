@@ -134,6 +134,24 @@ model Preset {
   projects        Project[]
 }
 
+model Clip {
+  id          String    @id @default(cuid())
+  sourceApi   String
+  externalId  String
+  query       String
+  localPath   String
+  duration    Float
+  width       Int
+  height      Int
+  tags        String    @default("[]")
+  usageCount  Int       @default(0)
+  lastUsedAt  DateTime?
+  isRejected  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  @@unique([sourceApi, externalId])
+}
+
 model VideoJob {
   id             String   @id @default(cuid())
   trackId        String
@@ -141,6 +159,7 @@ model VideoJob {
   status         String   @default("queued")
   visualTrack    String   @default("auto")
   outputPath     String?
+  introPath      String?
   youtubeUrl     String?
   youtubeVideoId String?
   errorMessage   String?

@@ -46,29 +46,44 @@ export function buildDirectives(
   projectGenre: string
 ): VisualDirective[] {
   const base = identity.signatureMotif || projectGenre
+  const beatTimes: number[] = (structure as any).beatTimes ?? []
 
-  return structure.sections.map((section) => {
+  const directives: VisualDirective[] = []
+
+  for (const section of structure.sections) {
     const e = section.energy
-    const clipDurationSec = e === "peak" ? 1.5 : e === "high" ? 3 : e === "medium" ? 6 : section.endSec - section.startSec
-    const cutFrequency = e === "peak" ? 2 : e === "high" ? 1 : e === "medium" ? 0.33 : 0.1
-    const effect = e === "peak" ? "flash-cut" : e === "high" ? "zoom-pulse" : e === "medium" ? "cut" : "slow-motion"
-    const visualStyle = e === "peak" ? "impact" : e === "high" ? "signature" : e === "medium" ? "atmospheric" : "narrative"
-    const colorIntensity = e === "peak" ? 1.3 : e === "high" ? 1.0 : e === "medium" ? 0.8 : 0.6
-    const searchQuery = `${base} ${energyWords[e] || ""} ${typeWords[section.type] || ""}`
+    const sectionBeats = beatTimes.filter(t => t >= section.startSec && t < section.endSec)
 
-    return {
-      startSec: section.startSec,
-      endSec: section.endSec,
-      type: section.type,
-      energy: e,
-      clipDurationSec,
-      cutFrequency,
-      effect,
-      visualStyle,
-      colorIntensity,
-      searchQuery,
+    if (beatTimes.length > 0 && sectionBeats.length > 0) {
+      const beatGroupSize = e === "peak" ? 1 : e === "high" ? 2 : e === "medium" ? 4 : 8
+      for (let i = 0; i < sectionBeats.length; i += beatGroupSize) {
+        const startSec = sectionBeats[i]
+        const endSec = sectionBeats[Math.min(i + beatGroupSize, sectionBeats.length - 1)] ?? section.endSec
+        const clipDurationSec = Math.max(endSec - startSec, 0.5)
+        const searchQuery = `${base} ${energyWords[e] || ""} ${typeWords[section.type] || ""}`.trim()
+        directives.push({
+          startSec, endSec, type: section.type, energy: e, clipDurationSec,
+          cutFrequency: 1 / clipDurationSec,
+          effect: e === "peak" ? "flash-cut" : e === "high" ? "zoom-pulse" : e === "medium" ? "cut" : "slow-motion",
+          visualStyle: e === "peak" ? "impact" : e === "high" ? "signature" : e === "medium" ? "atmospheric" : "narrative",
+          colorIntensity: e === "peak" ? 1.3 : e === "high" ? 1.0 : e === "medium" ? 0.8 : 0.6,
+          searchQuery,
+        })
+      }
+    } else {
+      const clipDurationSec = e === "peak" ? 1.5 : e === "high" ? 3 : e === "medium" ? 6 : section.endSec - section.startSec
+      directives.push({
+        startSec: section.startSec, endSec: section.endSec, type: section.type, energy: e,
+        clipDurationSec, cutFrequency: 1 / clipDurationSec,
+        effect: e === "peak" ? "flash-cut" : e === "high" ? "zoom-pulse" : e === "medium" ? "cut" : "slow-motion",
+        visualStyle: e === "peak" ? "impact" : e === "high" ? "signature" : e === "medium" ? "atmospheric" : "narrative",
+        colorIntensity: e === "peak" ? 1.3 : e === "high" ? 1.0 : e === "medium" ? 0.8 : 0.6,
+        searchQuery: `${base} ${energyWords[e] || ""} ${typeWords[section.type] || ""}`.trim(),
+      })
     }
-  })
+  }
+
+  return directives
 }
 
 export async function generateArtistIdentity(

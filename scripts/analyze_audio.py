@@ -16,6 +16,8 @@ def analyze(filepath):
     # BPM via beat tracking
     tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
     bpm = float(tempo[0]) if hasattr(tempo, '__len__') else float(tempo)
+    beat_times_raw = librosa.frames_to_time(beats, sr=sr)
+    beat_times = [round(float(t), 3) for t in beat_times_raw.tolist()]
 
     # Key signature via chroma
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
@@ -76,6 +78,7 @@ def analyze(filepath):
         "bpm":                round(bpm, 1),
         "key":                key,
         "sections":           sections,
+        "beatTimes":          beat_times,
         "tiktokBestStartSec": round(float(best_start), 3),
         "tiktokBestEndSec":   round(min(float(best_start) + 30.0, duration), 3),
     }

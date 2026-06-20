@@ -1,5 +1,6 @@
 import * as fs from "fs/promises"
 import * as path from "path"
+import * as os from "os"
 import { execSync } from "child_process"
 import type { VisualDirective, ArtistIdentityData } from "./visual-director"
 import type { ClipResult } from "./clip-library"
@@ -125,4 +126,45 @@ export async function assembleVideo(input: AssemblyInput): Promise<string> {
   await fs.unlink(concatVideo).catch(() => {})
 
   return outputPath
+}
+
+export async function assembleFullVideo(input: {
+  introPath: string | null
+  brollPath: string
+  audioPath: string
+  srtPath: string | null
+  outputPath: string
+}): Promise<string> {
+  const { introPath, brollPath, audioPath, srtPath, outputPath } = input
+  const workDir = path.join(os.tmpdir(), `amf-assemble-${Date.now()}`)
+  await fs.mkdir(workDir, { recursive: true })
+
+  try {
+    await fs.mkdir(path.dirname(outputPath), { recursive: true })
+
+    let videoSource = brollPath
+
+    if (introPath) {
+      const concatList = path.join(workDir, "concat.txt")
+      await fs.writeFile(concatList, `file '${introPath}'\nfile '${brollPath}'\n`)
+      const combinedPath = path.join(workDir, "combined.mp4")
+      execSync(
+        `ffmpeg -y -f concat -safe 0 -i "${concatList}" -c copy "${combinedPath}"`,
+        { timeout: 120_000, stdio: "pipe" }
+      )
+      videoSource = combinedPath
+    }
+
+    const srtFilter = srtPath ? `-vf "subtitles='${srtPath.replace(/'/g, "'\\''")}'"` : ""
+    execSync(
+      `ffmpeg -y -i "${videoSource}" -i "${audioPath}" ` +
+      `-map 0:v -map 1:a ${srtFilter} ` +
+      `-c:v libx264 -preset fast -b:v 12000k -c:a aac -b:a 320k -shortest "${outputPath}"`,
+      { timeout: 600_000, stdio: "pipe" }
+    )
+
+    return outputPath
+  } finally {
+    await fs.rm(workDir, { recursive: true, force: true }).catch(() => {})
+  }
 }

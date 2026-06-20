@@ -18,7 +18,9 @@ dev.db
 dev.db-journal
 
 # storage
-storage/
+storage/**
+!storage/hf-template/
+!storage/hf-template/**
 
 # misc
 .DS_Store
