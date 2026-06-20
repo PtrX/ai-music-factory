@@ -29,12 +29,10 @@ next-env.d.ts
 # AI/IDE internal settings
 .claude/
 .opencode/
+.superpowers/
 
 # Session/handoff files
 HANDOFF.md
-
-# Local scripts cache
-docs/superpowers/
 
 # SQLite databases
 *.db
