@@ -8,9 +8,9 @@ export function ScorePill({ label, value }: ScorePillProps) {
   const high = value >= 7
   return (
     <span
-      className="rounded-full text-[8px] font-bold tracking-[0.5px]"
+      className="rounded-full text-[10px] font-bold tracking-[0.5px]"
       style={{
-        padding: "1px 7px",
+        padding: "2px 8px",
         background: high ? "var(--accent-bg)" : "#111414",
         border: `1px solid ${high ? "var(--accent-border)" : "var(--border-hex)"}`,
         color: high ? "var(--accent-green)" : "var(--text-muted)",

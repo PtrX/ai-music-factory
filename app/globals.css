@@ -17,7 +17,7 @@
     --secondary:            180 10% 9%;
     --secondary-foreground: 162 21% 93%;
     --muted:                180 9% 11%;
-    --muted-foreground:     171 17% 28%;
+    --muted-foreground:     171 15% 58%;
     --accent:               151 63% 11%;
     --accent-foreground:    141 73% 42%;
     --destructive:          0 67% 60%;
@@ -36,7 +36,7 @@
     --accent-bg:            #0a2a1a;
     --accent-border:        #1a4030;
     --text-primary:         #e8f0ee;
-    --text-muted:           #3d5550;
+    --text-muted:           #7a9e96;
     --text-nav:             #7a9e96;
     --radius-pill:          9999px;
     --warning:              #f0a500;
