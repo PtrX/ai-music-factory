@@ -95,9 +95,7 @@ export function Sidebar() {
           style={{ background: "var(--surface-raised)", border: "1px solid var(--border-hex)" }}
         >
           {workerError ? (
-            <div className="text-[9px]" style={{ color: "var(--destructive-hex)" }}>
-              Worker —
-            </div>
+            <div className="text-[9px]" style={{ color: "var(--text-muted)" }}>Worker —</div>
           ) : worker ? (
             <div className="flex items-center gap-2">
               <div
@@ -111,11 +109,9 @@ export function Sidebar() {
                 >
                   Worker {worker.running ? "running" : "idle"}
                 </div>
-                {worker.pending > 0 && (
-                  <div className="text-[8px]" style={{ color: "var(--text-muted)" }}>
-                    {worker.pending} pending
-                  </div>
-                )}
+                <div className="text-[8px]" style={{ color: "var(--text-muted)" }}>
+                  {worker.pending} pending
+                </div>
               </div>
             </div>
           ) : (
