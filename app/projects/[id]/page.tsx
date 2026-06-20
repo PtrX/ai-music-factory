@@ -15,6 +15,7 @@ import { SongStructureTimeline } from "@/components/song-structure-timeline"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ScorePill } from "@/components/ui/score-pill"
 import { ArrowLeft, Play, Star, Trash2, Pencil, Check, X, Sparkles, Loader2, Film, ThumbsUp, ThumbsDown, ExternalLink, Upload } from "lucide-react"
 import { UploadVariantsModal } from "@/components/upload-variants-modal"
 
@@ -610,7 +611,7 @@ export default function ProjectDetail() {
 
   if (loading) {
     return (
-      <div className="container mx-auto py-8">
+      <div className="p-6">
         <div className="text-center text-muted-foreground py-16">Loading...</div>
       </div>
     )
@@ -618,7 +619,7 @@ export default function ProjectDetail() {
 
   if (!project) {
     return (
-      <div className="container mx-auto py-8">
+      <div className="p-6">
         <div className="text-center text-muted-foreground py-16">
           {error || "Project not found"}
         </div>
@@ -634,7 +635,7 @@ export default function ProjectDetail() {
   const variantFiles = (variantId: string) => files[variantId] || { lyrics: null, sunoPrompt: null, negativePrompt: null }
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <Link href="/">
           <Button variant="ghost" size="sm">
@@ -1082,7 +1083,10 @@ export default function ProjectDetail() {
                                     {track.aiScoreTotal !== null && (
                                       <Badge
                                         variant="outline"
-                                        className="text-blue-600 border-blue-200 text-xs cursor-pointer hover:bg-blue-50"
+                                        className="text-xs cursor-pointer"
+                                      style={{ color: "var(--accent-green)", borderColor: "var(--accent-border)", border: "1px solid var(--accent-border)" }}
+                                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "var(--accent-bg)" }}
+                                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent" }}
                                         title="Alle KI-Werte als Bewertung übernehmen"
                                         onClick={async () => {
                                           await fetch(`/api/tracks/${track.id}/rating`, {
