@@ -1,0 +1,20 @@
+version: "3.8"
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./storage:/app/storage
+      - ./dev.db:/app/dev.db
+    env_file: .env.local
+
+  worker:
+    build: .
+    command: node dist/worker/index.js
+    volumes:
+      - ./storage:/app/storage
+      - ./dev.db:/app/dev.db
+    env_file: .env.local
+    depends_on:
+      - app

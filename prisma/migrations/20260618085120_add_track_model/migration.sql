@@ -1,0 +1,26 @@
+-- CreateTable
+CREATE TABLE "Track" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "variantId" TEXT NOT NULL,
+    "index" INTEGER NOT NULL,
+    "audioPath" TEXT NOT NULL,
+    "versionName" TEXT,
+    "aiScoreHook" INTEGER,
+    "aiScoreVocal" INTEGER,
+    "aiScoreBeat" INTEGER,
+    "aiScoreEmotion" INTEGER,
+    "aiScoreRemix" INTEGER,
+    "aiScoreTikTok" INTEGER,
+    "aiScoreTotal" INTEGER,
+    "aiNotes" TEXT,
+    "scoreHook" INTEGER,
+    "scoreVocal" INTEGER,
+    "scoreBeat" INTEGER,
+    "scoreEmotion" INTEGER,
+    "scoreRemix" INTEGER,
+    "scoreTikTok" INTEGER,
+    "scoreTotal" INTEGER,
+    "notes" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Track_variantId_fkey" FOREIGN KEY ("variantId") REFERENCES "Variant" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);

@@ -1,0 +1,47 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+
+# production
+build/
+
+# env
+.env.local
+.env.production
+.env
+
+# prisma
+dev.db
+dev.db-journal
+
+# storage
+storage/
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+next-env.d.ts
+
+# AI/IDE internal settings
+.claude/
+.opencode/
+
+# Session/handoff files
+HANDOFF.md
+
+# Local scripts cache
+docs/superpowers/
+
+# SQLite databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+/tmp/
