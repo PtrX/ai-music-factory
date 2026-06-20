@@ -30,24 +30,25 @@
     #dot {
       width: 10px; height: 10px; border-radius: 50%;
       background: var(--accent); box-shadow: 0 0 14px var(--accent);
-      margin-bottom: 22px; opacity: 0;
+      margin-bottom: 22px;
     }
     #credit {
       font-family: 'JetBrains Mono', monospace; font-weight: 500;
       font-size: 22px; letter-spacing: 6px; text-transform: uppercase;
-      color: var(--accent); margin-bottom: 16px; opacity: 0;
+      color: var(--accent); margin-bottom: 16px;
     }
     #title {
       margin: 0; font-family: 'Space Grotesk', sans-serif; font-weight: 700;
       font-size: 88px; line-height: 1.0; color: var(--fg);
-      letter-spacing: -1px; opacity: 0;
+      letter-spacing: -1px;
     }
+    #title .w { display: inline-block; }
     #underline { width: 0; height: 4px; border-radius: 2px; background: var(--accent);
       box-shadow: 0 0 16px var(--accent); margin: 18px 0 14px; }
     #version {
       font-family: 'JetBrains Mono', monospace; font-weight: 500;
       font-size: 28px; letter-spacing: 5px; text-transform: uppercase;
-      color: var(--fg); opacity: 0;
+      color: var(--fg); opacity: 0.82;
     }
   </style>
 </head>
@@ -57,37 +58,32 @@
     <div id="scrim" class="clip" data-start="0" data-duration="5" data-track-index="1"></div>
     <div id="content" class="clip" data-start="0" data-duration="5" data-track-index="2">
       <div id="dot"></div>
-      <div id="credit">AI Music Factory</div>
-      <h1 id="title">Title</h1>
+      <div id="credit"></div>
+      <h1 id="title"></h1>
       <div id="underline"></div>
-      <div id="version">Original Mix</div>
+      <div id="version"></div>
     </div>
+
+    <script>
+      const v = window.__hyperframes.getVariables();
+      document.documentElement.style.setProperty('--accent', v.accent);
+      document.getElementById('credit').textContent = v.credit || 'AI Music Factory';
+      document.getElementById('version').textContent = v.version || '';
+      const titleEl = document.getElementById('title');
+      titleEl.innerHTML = String(v.title).split(' ').map(w => `<span class="w">${w}</span>`).join(' ');
+
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.from('#dot', { scale: 0, opacity: 0, duration: 0.4, ease: 'back.out(2)' }, 0.1);
+      tl.from('#credit', { x: -40, opacity: 0, duration: 0.6, ease: 'power2.out' }, 0.25);
+      tl.from('#title .w', { y: 50, opacity: 0, duration: 0.75, ease: 'power3.out', stagger: 0.1 }, 0.4);
+      tl.to('#underline', { width: 200, duration: 0.65, ease: 'power4.inOut' }, 0.9);
+      tl.from('#version', { y: 24, opacity: 0, duration: 0.55, ease: 'back.out(1.5)' }, 1.2);
+      tl.fromTo('#content', { scale: 1.0 }, { scale: 1.02, duration: 5, ease: 'none' }, 0);
+
+      window.__timelines['intro'] = tl;
+    </script>
   </div>
-  <script>
-    // Inject composition variables
-    const vars = {};
-    try {
-      const defs = JSON.parse(document.documentElement.dataset.compositionVariables || '[]');
-      defs.forEach(d => { vars[d.id] = d.default; });
-    } catch(e) {}
-    document.getElementById('title').textContent = vars.title || 'Title';
-    document.getElementById('version').textContent = vars.version || 'Original Mix';
-    document.getElementById('credit').textContent = vars.credit || 'AI Music Factory';
-    const accent = vars.accent || '#1db954';
-    document.documentElement.style.setProperty('--accent', accent);
-
-    // GSAP timeline
-    const tl = gsap.timeline({ delay: 0.3 });
-    tl.to('#dot', { opacity: 1, scale: 1, duration: 0.4, ease: 'power2.out' })
-      .to('#credit', { opacity: 0.9, y: 0, duration: 0.5, ease: 'power3.out' }, '-=0.1')
-      .to('#title', { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, '-=0.2')
-      .to('#underline', { width: 120, duration: 0.5, ease: 'power2.inOut' }, '-=0.1')
-      .to('#version', { opacity: 0.8, y: 0, duration: 0.4, ease: 'power3.out' }, '-=0.2');
-
-    // Initial positions for animation
-    gsap.set('#credit', { y: 20 });
-    gsap.set('#title', { y: 30 });
-    gsap.set('#version', { y: 15 });
-  </script>
 </body>
 </html>

@@ -35,7 +35,7 @@ export async function POST(
       },
     })
 
-    await enqueue("video_render", null, {
+    await enqueue("intro_render", null, {
       trackId: track.id,
       visualTrack,
       videoJobId: videoJob.id,

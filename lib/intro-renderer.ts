@@ -37,12 +37,19 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
     html = html.replace(/data-duration="\d+"/g, `data-duration="${dur}"`)
 
     await fs.writeFile(path.join(tmpDir, "index.html"), html)
-    await fs.copyFile(backgroundClipPath, path.join(tmpDir, "bg.mp4"))
+
+    // Re-encode bg clip with dense keyframes (required by HyperFrames for seek)
+    const bgPath = path.join(tmpDir, "bg.mp4")
+    execSync(
+      `ffmpeg -y -i "${backgroundClipPath}" -t ${dur + 1} ` +
+      `-c:v libx264 -r 30 -g 30 -keyint_min 30 -movflags +faststart -an "${bgPath}"`,
+      { timeout: 60_000, stdio: "pipe" }
+    )
 
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     execSync(
       `npx hyperframes render --output "${outputPath}"`,
-      { cwd: tmpDir, timeout: 120_000, stdio: "pipe" }
+      { cwd: tmpDir, timeout: 180_000, stdio: "pipe" }
     )
 
     return outputPath

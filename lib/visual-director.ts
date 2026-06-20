@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/db"
 import type { TrackStructure } from "@/lib/ai-rating"
 
 export interface VisualDirective {
@@ -86,26 +85,50 @@ export function buildDirectives(
   return directives
 }
 
+const GENRE_FALLBACK: Record<string, ArtistIdentityData> = {
+  "afro deep house":{ colorPrimary: "#0d1a14", colorAccent: "#1db954", signatureMotif: "ocean waves rhythm", visualTrack: "nature-epic" },
+  "deep house":     { colorPrimary: "#0d1414", colorAccent: "#1db954", signatureMotif: "ocean waves flowing", visualTrack: "nature-epic" },
+  "afro":           { colorPrimary: "#0d1f1a", colorAccent: "#1db954", signatureMotif: "savanna rhythm nature", visualTrack: "nature-epic" },
+  "house":          { colorPrimary: "#100d1f", colorAccent: "#7c3aed", signatureMotif: "urban night motion", visualTrack: "urban-street" },
+  "techno":         { colorPrimary: "#0d0d14", colorAccent: "#e94560", signatureMotif: "neon city industrial", visualTrack: "cyberpunk" },
+  "trance":         { colorPrimary: "#0a0d1f", colorAccent: "#60a5fa", signatureMotif: "astral light energy", visualTrack: "astral-space" },
+  "ambient":        { colorPrimary: "#0a1414", colorAccent: "#34d399", signatureMotif: "slow nature breath", visualTrack: "nature-epic" },
+  "drum and bass":  { colorPrimary: "#0d0d0d", colorAccent: "#f97316", signatureMotif: "fast city rush", visualTrack: "urban-street" },
+  "hip hop":        { colorPrimary: "#0f0d0a", colorAccent: "#fbbf24", signatureMotif: "street culture vibe", visualTrack: "urban-street" },
+  "jazz":           { colorPrimary: "#1a120a", colorAccent: "#d97706", signatureMotif: "smoke club night", visualTrack: "vintage-film" },
+  "classical":      { colorPrimary: "#0f0f0a", colorAccent: "#e5d48a", signatureMotif: "concert hall light", visualTrack: "vintage-film" },
+  "pop":            { colorPrimary: "#1a0d1f", colorAccent: "#ec4899", signatureMotif: "bright color energy", visualTrack: "abstract-motion" },
+  "default":        { colorPrimary: "#0d1414", colorAccent: "#1db954", signatureMotif: null, visualTrack: "nature-epic" },
+}
+
+function genreFallback(genre: string): ArtistIdentityData {
+  const g = genre.toLowerCase()
+  for (const key of Object.keys(GENRE_FALLBACK)) {
+    if (key !== "default" && g.includes(key)) return GENRE_FALLBACK[key]
+  }
+  return GENRE_FALLBACK["default"]
+}
+
 export async function generateArtistIdentity(
-  project: { id: string; title: string; genre: string; mood: string },
-  structure: TrackStructure
+  project: { title: string; genre: string; mood: string },
+  aiReview?: string | null
 ): Promise<ArtistIdentityData> {
   const apiKey = process.env.OPENROUTER_API_KEY
-  const prompt = `You are a creative director. Given this music project:
-Title: "${project.title}", Genre: "${project.genre}", Mood: "${project.mood}"
+  if (!apiKey || !aiReview) return genreFallback(project.genre)
 
-Return SINGLE JSON (no markdown):
-{
-  "colorPrimary": "<hex, dark atmospheric>",
-  "colorAccent": "<hex, vibrant contrast>",
-  "signatureMotif": "<2-3 words, visual theme matching title/mood, e.g. 'river mountains', 'neon city rain'>",
-  "fontFamily": "<Google Font name, e.g. 'Playfair Display', 'Montserrat', 'Bebas Neue'>",
-  "visualTrack": "<nature-epic|cyberpunk|abstract-motion|urban-street|vintage-film|astral-space>"
-}`
+  const prompt = `You are a creative director choosing visuals for a music video.
+
+Music review:
+"${aiReview}"
+
+Track: "${project.title}" | Genre: ${project.genre} | Mood: ${project.mood}
+
+Return JSON only, no markdown, no explanation:
+{"colorPrimary":"<dark hex>","colorAccent":"<vibrant hex>","signatureMotif":"<2-3 English words for stock footage search, e.g. 'river mountains mist'>","visualTrack":"<one of: nature-epic|cyberpunk|abstract-motion|urban-street|vintage-film|astral-space>"}`
 
   try {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 30000)
+    const timeout = setTimeout(() => controller.abort(), 20_000)
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -114,49 +137,31 @@ Return SINGLE JSON (no markdown):
         "HTTP-Referer": "http://localhost:3000",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.0-flash-001",
+        model: "google/gemini-2.5-flash",
         messages: [{ role: "user", content: prompt }],
         max_tokens: 512,
-        temperature: 0.7,
+        temperature: 0.5,
+        response_format: { type: "json_object" },
       }),
       signal: controller.signal,
     })
     clearTimeout(timeout)
 
-    if (!res.ok) throw new Error(`API returned ${res.status}`)
+    if (!res.ok) throw new Error(`API ${res.status}`)
     const data = await res.json()
     const content: string = data?.choices?.[0]?.message?.content || ""
     const match = content.match(/\{[\s\S]*\}/)
-    if (!match) throw new Error("No JSON in LLM response")
+    if (!match) throw new Error("No JSON in response")
 
     const parsed = JSON.parse(match[0])
-
-    const result: ArtistIdentityData = {
-      colorPrimary: parsed.colorPrimary || "#1a1a2e",
-      colorAccent: parsed.colorAccent || "#e94560",
-      signatureMotif: parsed.signatureMotif || null,
-      visualTrack: parsed.visualTrack || "nature-epic",
-    }
-
-    await prisma.artistIdentity.create({
-      data: {
-        projectId: project.id,
-        colorPrimary: result.colorPrimary,
-        colorAccent: result.colorAccent,
-        signatureMotif: result.signatureMotif,
-        fontFamily: parsed.fontFamily || "Montserrat",
-        visualTrack: result.visualTrack,
-      },
-    })
-
-    return result
-  } catch (err) {
-    console.error("[generateArtistIdentity] Failed:", err)
     return {
-      colorPrimary: "#1a1a2e",
-      colorAccent: "#e94560",
-      signatureMotif: null,
-      visualTrack: "nature-epic",
+      colorPrimary: parsed.colorPrimary || genreFallback(project.genre).colorPrimary,
+      colorAccent: parsed.colorAccent || genreFallback(project.genre).colorAccent,
+      signatureMotif: parsed.signatureMotif || null,
+      visualTrack: parsed.visualTrack || genreFallback(project.genre).visualTrack,
     }
+  } catch (err) {
+    console.warn("[generateArtistIdentity] LLM failed, using genre fallback:", (err as Error).message)
+    return genreFallback(project.genre)
   }
 }

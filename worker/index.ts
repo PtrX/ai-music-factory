@@ -530,7 +530,7 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
   const userScoresHigh = (track.scoreTotal ?? 0) >= 6
   if (!aiScoresHigh && !userScoresHigh) throw new Error("Track quality below threshold — min scoreTotal >= 6 required")
 
-  const identity = project.artistIdentity ?? await generateArtistIdentity(project, structure)
+  const identity = project.artistIdentity ?? await generateArtistIdentity(project, track.aiNotes)
 
   const identityData = {
     colorPrimary: identity.colorPrimary,
@@ -664,7 +664,7 @@ async function handleIntroRenderJob(job: { id: string; payload: string; variantI
   const structure = JSON.parse(track.structureJson)
   const project = track.variant.project
 
-  const identity = project.artistIdentity ?? await generateArtistIdentity(project, structure)
+  const identity = project.artistIdentity ?? await generateArtistIdentity(project, track.aiNotes)
 
   const introSection = structure.sections?.find((s: { type: string }) => s.type === "intro")
   const introDurationSec = introSection ? Math.min(introSection.endSec - introSection.startSec, 8) : 5
