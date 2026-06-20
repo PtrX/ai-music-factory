@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ScorePill } from "@/components/ui/score-pill"
 import { projectGradient } from "@/lib/project-color"
@@ -33,22 +33,33 @@ function bestVariant(variants: VariantSummary[]): VariantSummary | null {
   }, null)
 }
 
+function SkeletonCard() {
+  return (
+    <div
+      className="rounded-lg p-3 animate-pulse"
+      style={{ background: "var(--surface-raised)", border: "1px solid var(--border-hex)", height: 72 }}
+    />
+  )
+}
+
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchProjects = useCallback(() => {
+  const fetchProjects = () => {
     setLoading(true)
     setError(null)
     fetch("/api/projects")
       .then(r => r.ok ? r.json() : { projects: [] })
       .then(d => setProjects(Array.isArray(d?.projects) ? d.projects : []))
-      .catch(() => { setError("Projekte konnten nicht geladen werden.") })
+      .catch(() => { setError("Projekte konnten nicht geladen werden."); setProjects([]) })
       .finally(() => setLoading(false))
-  }, [])
+  }
 
-  useEffect(() => { fetchProjects() }, [fetchProjects])
+  useEffect(() => {
+    fetchProjects()
+  }, [])
 
   return (
     <div className="p-6">
@@ -73,19 +84,13 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      {/* Loading */}
+      {/* Loading skeletons */}
       {loading ? (
         <div className="flex flex-col gap-3 max-w-2xl">
-          {[1, 2, 3].map(i => (
-            <div
-              key={i}
-              className="rounded-lg p-3 animate-pulse"
-              style={{ background: "var(--surface-raised)", border: "1px solid var(--border-hex)", height: 72 }}
-            />
-          ))}
+          {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
         </div>
       ) : error ? (
-        /* Error */
+        /* Error state */
         <div className="flex flex-col gap-2">
           <p className="text-[12px]" style={{ color: "var(--destructive-hex)" }}>{error}</p>
           <button
@@ -97,7 +102,7 @@ export default function Dashboard() {
           </button>
         </div>
       ) : projects.length === 0 ? (
-        /* Empty */
+        /* Empty state — first-use CTA */
         <div className="flex flex-col items-start gap-3 py-8">
           <div className="text-[13px] font-bold" style={{ color: "var(--text-primary)" }}>
             Noch kein Projekt
@@ -114,7 +119,7 @@ export default function Dashboard() {
           </Link>
         </div>
       ) : (
-        /* Grid */
+        /* Populated grid */
         <div className="flex flex-col gap-3 max-w-2xl">
           {projects.map(p => {
             const best = bestVariant(p.variants)
