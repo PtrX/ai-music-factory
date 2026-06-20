@@ -15,7 +15,7 @@ import { fetchAndCacheSunoCredits } from "@/lib/system-status"
 import { findClipForDirective } from "@/lib/clip-library"
 import { assembleVideo } from "@/lib/video-assembler"
 import { uploadToYouTube, buildYouTubeDescription } from "@/lib/youtube-client"
-import { sendTelegramNotification } from "@/lib/telegram"
+import { sendTelegramNotification, sendTrackCard } from "@/lib/telegram"
 
 const POLL_INTERVAL = 5000
 
@@ -343,11 +343,27 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
   // Cache remaining Suno credits after successful generation
   fetchAndCacheSunoCredits().catch(() => {})
 
-  // Notify Telegram about completed tracks
-  await sendTelegramNotification(
-    `✅ Track fertig: *${variant.project.title}* ${variant.versionName ?? ""}\n` +
-    `Score: ${variant.scoreTotal ?? "—"} | [Öffnen](${process.env.NEXT_PUBLIC_APP_URL}/projects/${variant.project.id})`
-  )
+  // Notify Telegram — one card per new track
+  const newTracks = await prisma.track.findMany({
+    where: { variantId: variant.id },
+    orderBy: { createdAt: "desc" },
+    take: files.length,
+  })
+  for (const track of newTracks) {
+    await sendTrackCard({
+      trackId:      track.id,
+      trackIndex:   track.index,
+      versionName:  track.versionName,
+      audioPath:    track.audioPath,
+      projectTitle: variant.project.title,
+      variantLabel: variant.label,
+      scoreTotal:   track.aiScoreTotal,
+      scoreHook:    track.aiScoreHook,
+      scoreVocal:   track.aiScoreVocal,
+      scoreBeat:    track.aiScoreBeat,
+      aiNotes:      track.aiNotes,
+    })
+  }
 
   // If all variants of this project are completed, mark project as completed too
   const allVariants = await prisma.variant.findMany({ where: { projectId: variant.project.id } })
