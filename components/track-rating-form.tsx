@@ -119,7 +119,7 @@ export function TrackRatingForm({ trackId, aiScores, userScores, onSaved }: Trac
               {aiVal !== null && aiVal !== undefined ? (
                 <Badge
                   variant="outline"
-                  className="text-[10px] w-10 justify-center shrink-0 text-blue-600 border-blue-200 cursor-pointer hover:bg-blue-50 active:bg-blue-100"
+                  className="text-[10px] w-10 justify-center shrink-0 text-blue-400 border-blue-800 cursor-pointer hover:bg-blue-900/30 active:bg-blue-900/50"
                   title="KI-Wert übernehmen"
                   onClick={() => {
                     const next = { ...scores, [user]: aiVal }
@@ -150,7 +150,7 @@ export function TrackRatingForm({ trackId, aiScores, userScores, onSaved }: Trac
       </div>
 
       <textarea
-        className="w-full text-xs border rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+        className="w-full text-xs border border-border rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-ring bg-muted text-foreground placeholder:text-muted-foreground"
         rows={2}
         placeholder="Notizen..."
         value={notes}
