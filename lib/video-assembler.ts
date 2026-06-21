@@ -49,9 +49,11 @@ export async function assembleVideo(input: AssemblyInput): Promise<string> {
     // sync. Looping every clip adds needless overhead, so make it conditional.
     const needsLoop = clipFileDur < seekOffset + clipDuration + 0.1
     const loop = needsLoop ? "-stream_loop -1 " : ""
+    // Scale to COVER the 1920x1080 frame and crop the overflow (zoom-to-fill)
+    // instead of padding — never leaves black bars on non-16:9 source clips.
     execSync(
       `ffmpeg -y ${loop}-ss ${seekOffset.toFixed(3)} -i "${clip.localPath}" -t ${clipDuration.toFixed(3)} ` +
-      `-vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30" ` +
+      `-vf "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30" ` +
       `-c:v libx264 -preset fast -crf 23 -an "${tmpClip}"`,
       { timeout: 120000, stdio: "ignore" }
     )
