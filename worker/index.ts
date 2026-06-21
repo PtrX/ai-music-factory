@@ -772,9 +772,22 @@ async function processJob() {
   }
 }
 
+// ffmpeg runs via execSync, which blocks the event loop — so if the worker is
+// killed mid-render its ffmpeg child is orphaned and keeps burning CPU. On a
+// fresh start any pipeline ffmpeg is necessarily stale, so reap them. (Also
+// called on graceful shutdown as a best-effort.)
+function killOrphanedFfmpeg() {
+  for (const pat of ["amf-assemble", "/outputs/videos/seg-"]) {
+    try {
+      execSync(`pkill -9 -f ${JSON.stringify(pat)}`, { stdio: "ignore" })
+    } catch { /* nothing matched */ }
+  }
+}
+
 async function main() {
   console.log("[Worker] Starting AI Music Factory worker...")
 
+  killOrphanedFfmpeg()
   await resetStaleJobs()
 
   let shuttingDown = false
@@ -790,17 +803,14 @@ async function main() {
   }
   loop()
 
-  process.on("SIGINT", () => {
+  const shutdown = () => {
     console.log("[Worker] Shutting down gracefully...")
     shuttingDown = true
+    killOrphanedFfmpeg()
     setTimeout(() => process.exit(0), 10_000)
-  })
-
-  process.on("SIGTERM", () => {
-    console.log("[Worker] Shutting down gracefully...")
-    shuttingDown = true
-    setTimeout(() => process.exit(0), 10_000)
-  })
+  }
+  process.on("SIGINT", shutdown)
+  process.on("SIGTERM", shutdown)
 }
 
 main().catch(console.error)
