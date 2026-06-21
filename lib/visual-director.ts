@@ -133,63 +133,120 @@ function detectImpactBeats(
 export function buildDirectives(
   structure: TrackStructure,
   identity: ArtistIdentityData,
-  _projectGenre: string
+  _projectGenre: string,
+  audioDurationSec?: number,
+  introOffsetSec = 0
 ): VisualDirective[] {
   const beatTimes: number[] = (structure as any).beatTimes ?? []
+  const beatStrength: number[] = (structure as any).beatStrength ?? []
+  const hasStrength = beatStrength.length === beatTimes.length && beatTimes.length > 0
   const vt = identity.visualTrack || "nature-epic"
   let globalIdx = 0
 
-  // Precompute impact beats and index lookup
-  const impactBeats = detectImpactBeats(beatTimes, structure.sections)
-  const beatIndexMap = new Map(beatTimes.map((t, i) => [t, i]))
-
   const directives: VisualDirective[] = []
 
-  for (const section of structure.sections) {
-    const e = section.energy
-    const sectionBeats = beatTimes.filter(t => t >= section.startSec && t < section.endSec)
+  type Energy = "low" | "medium" | "high" | "peak"
+  const FPS = 30
+  const snap = (t: number) => Math.round(t * FPS) / FPS
+  // Absolute end of the timeline — must cover the WHOLE audio so the b-roll
+  // stays sample-accurate against the music (no looping / no early-start drift).
+  const lastSection = structure.sections[structure.sections.length - 1]
+  const audioEnd = snap(
+    audioDurationSec ?? (structure as any).totalDurationSec ?? (lastSection ? lastSection.endSec : 0)
+  )
 
-    const makeDirective = (startSec: number, endSec: number, effectiveEnergy: "low" | "medium" | "high" | "peak") => {
-      const clipDurationSec = Math.max(endSec - startSec, 0.5)
-      const query = buildQuery(vt, globalIdx, globalIdx, energyWord[effectiveEnergy] || "")
-      globalIdx++
-      return {
-        startSec, endSec, type: section.type, energy: effectiveEnergy, clipDurationSec,
-        cutFrequency: 1 / clipDurationSec,
-        effect: (effectiveEnergy === "peak" ? "flash-cut" : effectiveEnergy === "high" ? "zoom-pulse" : effectiveEnergy === "medium" ? "cut" : "cut") as VisualDirective["effect"],
-        visualStyle: (effectiveEnergy === "peak" ? "impact" : effectiveEnergy === "high" ? "signature" : effectiveEnergy === "medium" ? "atmospheric" : "narrative") as VisualDirective["visualStyle"],
-        colorIntensity: effectiveEnergy === "peak" ? 1.3 : effectiveEnergy === "high" ? 1.0 : effectiveEnergy === "medium" ? 0.8 : 0.6,
-        searchQuery: query,
+  const sectionAt = (t: number) =>
+    structure.sections.find(s => t >= s.startSec && t < s.endSec) ?? lastSection
+
+  const makeDirective = (
+    startSec: number,
+    endSec: number,
+    effectiveEnergy: Energy,
+    section: { type: string }
+  ): VisualDirective => {
+    const clipDurationSec = Math.max(endSec - startSec, 0.5)
+    const query = buildQuery(vt, globalIdx, globalIdx, energyWord[effectiveEnergy] || "")
+    globalIdx++
+    return {
+      startSec, endSec, type: section.type, energy: effectiveEnergy, clipDurationSec,
+      cutFrequency: 1 / clipDurationSec,
+      effect: (effectiveEnergy === "peak" ? "flash-cut" : effectiveEnergy === "high" ? "zoom-pulse" : effectiveEnergy === "medium" ? "cut" : "cut") as VisualDirective["effect"],
+      visualStyle: (effectiveEnergy === "peak" ? "impact" : effectiveEnergy === "high" ? "signature" : effectiveEnergy === "medium" ? "atmospheric" : "narrative") as VisualDirective["visualStyle"],
+      colorIntensity: effectiveEnergy === "peak" ? 1.3 : effectiveEnergy === "high" ? 1.0 : effectiveEnergy === "medium" ? 0.8 : 0.6,
+      searchQuery: query,
+    }
+  }
+
+  if (beatTimes.length > 0) {
+    // An "accent" is a STANDOUT percussive hit (a big drum), i.e. a local peak
+    // in onset strength — not merely a loud steady beat. We force a scene change
+    // EXACTLY on these so cuts land on the hit, not a beat later.
+    const ACCENT_ABS = 0.45   // must be at least this strong (0..1)
+    const ACCENT_REL = 2.0    // and at least this × the local average
+    const isAccent = (i: number): boolean => {
+      if (!hasStrength) return false
+      const s = beatStrength[i]
+      if (s < ACCENT_ABS) return false
+      let sum = 0, n = 0
+      for (let k = i - 2; k <= i + 2; k++) {
+        if (k === i || k < 0 || k >= beatStrength.length) continue
+        sum += beatStrength[k]; n++
+      }
+      const localAvg = n ? sum / n : 0
+      return s >= ACCENT_REL * localAvg
+    }
+
+    // 1) Collect clip-start boundaries. `energy` is the energy of the clip that
+    //    STARTS at that boundary (accents start a punchy clip).
+    const bounds: { time: number; energy: Energy; accent: boolean }[] = []
+    for (const section of structure.sections) {
+      const e = section.energy as Energy
+      const idxs: number[] = []
+      for (let i = 0; i < beatTimes.length; i++) {
+        if (beatTimes[i] >= section.startSec && beatTimes[i] < section.endSec) idxs.push(i)
+      }
+      if (idxs.length === 0) continue
+
+      // Quiet sections hold longer and let accents do the punctuation; busy
+      // sections cut on a tighter beat grid.
+      const groupSize = e === "peak" ? 1 : e === "high" ? 2 : e === "medium" ? 4 : 8
+
+      for (let k = 0; k < idxs.length; k += groupSize) {
+        bounds.push({ time: beatTimes[idxs[k]], energy: e, accent: false })
+      }
+      for (const i of idxs) {
+        if (isAccent(i)) bounds.push({ time: beatTimes[i], energy: "high", accent: true })
       }
     }
 
-    if (beatTimes.length > 0 && sectionBeats.length > 0) {
-      // Low energy uses 4 beats (not 8) so max ~2s clips; slow-motion removed (broke timing)
-      const beatGroupSize = e === "peak" ? 1 : e === "high" ? 2 : e === "medium" ? 4 : 4
-
-      let i = 0
-      while (i < sectionBeats.length) {
-        const beatIdx = beatIndexMap.get(sectionBeats[i]) ?? -1
-        const isImpact = impactBeats.has(beatIdx)
-        const groupSize = isImpact ? 1 : beatGroupSize
-
-        const start = sectionBeats[i]
-        const end = (i + groupSize < sectionBeats.length)
-          ? sectionBeats[i + groupSize]
-          : section.endSec
-
-        // Impact beats in calm sections get promoted energy for more dynamic effect + query
-        const eff: "low" | "medium" | "high" | "peak" =
-          isImpact && e === "low" ? "medium" :
-          isImpact && e === "medium" ? "high" : e
-
-        directives.push(makeDirective(start, end, eff))
-        i += groupSize
+    // 2) Tile [introOffset .. audioEnd] gap-free. Each clip runs from one
+    //    boundary to the next, so back-to-back concatenation lands every cut
+    //    exactly on its beat. Accents win when two boundaries nearly collide.
+    bounds.sort((a, b) => a.time - b.time || (b.accent ? 1 : 0) - (a.accent ? 1 : 0))
+    const MIN_CLIP = 0.25
+    let cursor = snap(introOffsetSec)
+    let pendingEnergy: Energy = (sectionAt(cursor).energy as Energy) ?? "low"
+    for (const b of bounds) {
+      const t = snap(b.time)
+      if (t <= cursor + MIN_CLIP) {
+        if (b.accent) pendingEnergy = b.energy   // accent upgrades the held clip's punch
+        continue
       }
-    } else {
-      // No beats in section: fallback to one clip
-      const clipDur = e === "peak" ? 1.5 : e === "high" ? 3 : e === "medium" ? 4 : 4
-      directives.push(makeDirective(section.startSec, Math.min(section.startSec + clipDur, section.endSec), e))
+      directives.push(makeDirective(cursor, t, pendingEnergy, sectionAt(cursor)))
+      cursor = t
+      pendingEnergy = b.energy
+    }
+    if (audioEnd - cursor > MIN_CLIP) {
+      directives.push(makeDirective(cursor, audioEnd, pendingEnergy, sectionAt(cursor)))
+    }
+  } else {
+    // No beats at all: one clip per section, still tiling from the intro offset.
+    let cursor = snap(introOffsetSec)
+    for (const section of structure.sections) {
+      const end = snap(section.endSec)
+      if (end <= cursor + 0.1) continue
+      directives.push(makeDirective(cursor, end, section.energy as Energy, section))
+      cursor = end
     }
   }
 

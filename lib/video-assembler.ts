@@ -44,8 +44,13 @@ export async function assembleVideo(input: AssemblyInput): Promise<string> {
     const seekOffset = (Math.random() > 0.65 && maxSeek > 0.5)
       ? Math.random() * Math.min(maxSeek, 2.0) : 0
 
+    // Loop ONLY when the source is too short to fill clipDuration — otherwise
+    // the segment would be truncated and the timeline would drift out of beat
+    // sync. Looping every clip adds needless overhead, so make it conditional.
+    const needsLoop = clipFileDur < seekOffset + clipDuration + 0.1
+    const loop = needsLoop ? "-stream_loop -1 " : ""
     execSync(
-      `ffmpeg -y -ss ${seekOffset.toFixed(3)} -t ${clipDuration.toFixed(3)} -i "${clip.localPath}" ` +
+      `ffmpeg -y ${loop}-ss ${seekOffset.toFixed(3)} -i "${clip.localPath}" -t ${clipDuration.toFixed(3)} ` +
       `-vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30" ` +
       `-c:v libx264 -preset fast -crf 23 -an "${tmpClip}"`,
       { timeout: 120000, stdio: "ignore" }
@@ -118,16 +123,27 @@ export async function assembleFullVideo(input: {
 
     const audioDur = await getVideoDuration(audioPath)
     const videoDur = await getVideoDuration(videoSource)
+    const loopFlag = videoDur < audioDur - 0.1 ? "-stream_loop -1" : ""
 
-    const srtFilter = srtPath ? `,subtitles='${srtPath.replace(/'/g, "\\'")}'` : ""
-
-    const loopFlag = videoDur < audioDur ? "-stream_loop -1" : ""
-    execSync(
-      `ffmpeg -y ${loopFlag} -i "${videoSource}" -i "${audioPath}" ` +
-      `-map 0:v -map 1:a -vf "setpts=PTS-STARTPTS${srtFilter}" ` +
-      `-c:v libx264 -preset fast -b:v 12000k -c:a aac -b:a 320k -t ${audioDur} "${outputPath}"`,
-      { timeout: 600_000, stdio: "ignore" }
-    )
+    if (srtPath) {
+      // Subtitles must be burned in → re-encode the video.
+      const srtFilter = `,subtitles='${srtPath.replace(/'/g, "\\'")}'`
+      execSync(
+        `ffmpeg -y ${loopFlag} -i "${videoSource}" -i "${audioPath}" ` +
+        `-map 0:v -map 1:a -vf "setpts=PTS-STARTPTS${srtFilter}" ` +
+        `-c:v libx264 -preset fast -b:v 12000k -c:a aac -b:a 320k -t ${audioDur} "${outputPath}"`,
+        { timeout: 600_000, stdio: "ignore" }
+      )
+    } else {
+      // No subtitles → the b-roll/intro are already 1080p H.264, so copy the
+      // video stream and only mux the audio. Turns a multi-minute re-encode
+      // into a few-second remux.
+      execSync(
+        `ffmpeg -y ${loopFlag} -i "${videoSource}" -i "${audioPath}" ` +
+        `-map 0:v -map 1:a -c:v copy -c:a aac -b:a 320k -t ${audioDur} -movflags +faststart "${outputPath}"`,
+        { timeout: 120_000, stdio: "ignore" }
+      )
+    }
 
     return outputPath
   } finally {

@@ -539,10 +539,41 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     visualTrack: identity.visualTrack,
   }
 
-  const directives = buildDirectives(structure, identityData, project.genre)
+  // Probe the real audio duration so the b-roll timeline can tile the WHOLE
+  // track sample-accurately (structure.totalDurationSec is often missing).
+  const audioFullPath = path.join(project.folderPath, track.audioPath)
+  let audioDur = structure.totalDurationSec || 240
+  try {
+    const probed = parseFloat(
+      execSync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioFullPath}"`,
+        { timeout: 10_000 }
+      ).toString().trim()
+    )
+    if (probed > 0) audioDur = probed
+  } catch { /* fall back to structure/default */ }
+
+  // The intro title card is concatenated BEFORE the b-roll, so the b-roll must
+  // start at song-time = intro duration to keep cuts aligned to the beat.
+  const videoJob = await prisma.videoJob.findUnique({ where: { id: videoJobId } })
+  if (!videoJob) throw new Error("VideoJob not found")
+  let introOffsetSec = 0
+  const introPath = videoJob.introPath ? path.join(project.folderPath, videoJob.introPath) : null
+  if (introPath) {
+    try {
+      const probed = parseFloat(
+        execSync(
+          `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${introPath}"`,
+          { timeout: 10_000 }
+        ).toString().trim()
+      )
+      if (probed > 0) introOffsetSec = probed
+    } catch { /* no offset if probe fails */ }
+  }
+
+  const directives = buildDirectives(structure, identityData, project.genre, audioDur, introOffsetSec)
 
   // Build a pool of 60+ unique clips upfront, then assign cyclically
-  const audioDur = structure.totalDurationSec || 240
   const targetPoolSize = Math.max(60, Math.ceil(audioDur / 3))
   const pool = await buildClipPool(directives, targetPoolSize, project.id)
 
@@ -564,10 +595,6 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     title: `${project.title} — ${track.versionName || "Mix"}`,
   })
 
-  const videoJob = await prisma.videoJob.findUnique({ where: { id: videoJobId } })
-  if (!videoJob) throw new Error("VideoJob not found")
-
-  const introPath = videoJob.introPath ? path.join(project.folderPath, videoJob.introPath) : null
   const srtPath = track.srtPath ? path.join(project.folderPath, track.srtPath) : null
   const finalOutputPath = path.join(project.folderPath, `outputs/videos/${track.id}-final.mp4`)
 

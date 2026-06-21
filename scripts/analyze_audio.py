@@ -14,10 +14,22 @@ def analyze(filepath):
     duration = float(librosa.get_duration(y=y, sr=sr))
 
     # BPM via beat tracking
-    tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
+    hop_length = 512
+    tempo, beats = librosa.beat.beat_track(y=y, sr=sr, hop_length=hop_length)
     bpm = float(tempo[0]) if hasattr(tempo, '__len__') else float(tempo)
-    beat_times_raw = librosa.frames_to_time(beats, sr=sr)
+    beat_times_raw = librosa.frames_to_time(beats, sr=sr, hop_length=hop_length)
     beat_times = [round(float(t), 3) for t in beat_times_raw.tolist()]
+
+    # Per-beat onset strength (0..1) — lets the video director cut exactly on
+    # strong percussive accents instead of the extrapolated tempo grid.
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
+    onset_max = float(np.max(onset_env)) if np.max(onset_env) > 0 else 1.0
+    beat_strength = []
+    for f in beats:
+        lo = max(0, int(f) - 2)
+        hi = min(len(onset_env), int(f) + 3)
+        peak = float(np.max(onset_env[lo:hi])) if lo < hi else 0.0
+        beat_strength.append(round(peak / onset_max, 3))
 
     # Key signature via chroma
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
@@ -25,8 +37,7 @@ def analyze(filepath):
     keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
     key = keys[key_idx]
 
-    # RMS energy envelope
-    hop_length = 512
+    # RMS energy envelope (reuses hop_length defined above)
     rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=hop_length)[0]
     max_rms = float(np.max(rms)) if np.max(rms) > 0 else 1.0
 
@@ -79,6 +90,7 @@ def analyze(filepath):
         "key":                key,
         "sections":           sections,
         "beatTimes":          beat_times,
+        "beatStrength":       beat_strength,
         "tiktokBestStartSec": round(float(best_start), 3),
         "tiktokBestEndSec":   round(min(float(best_start) + 30.0, duration), 3),
     }

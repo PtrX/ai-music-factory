@@ -32,6 +32,7 @@ export interface TrackStructure {
   tiktokBestStartSec: number
   tiktokBestEndSec: number
   beatTimes: number[]
+  beatStrength: number[]
 }
 
 export interface AiAnalysisResult {
@@ -142,6 +143,7 @@ function mergeLibrosaWithLabels(
     tiktokBestStartSec: librosa.tiktokBestStartSec,
     tiktokBestEndSec:   librosa.tiktokBestEndSec,
     beatTimes:        librosa.beatTimes ?? [],
+    beatStrength:     librosa.beatStrength ?? [],
   }
 }
 

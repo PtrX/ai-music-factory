@@ -18,6 +18,7 @@ export interface LibrosaResult {
   key: string
   sections: LibrosaSection[]
   beatTimes: number[]
+  beatStrength: number[]
   tiktokBestStartSec: number
   tiktokBestEndSec: number
 }
