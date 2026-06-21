@@ -20,32 +20,128 @@ export interface ArtistIdentityData {
   visualTrack: string
 }
 
-const energyWords: Record<string, string> = {
-  peak: "dynamic intense impact",
-  high: "motion energy vibrant",
-  medium: "scenic atmospheric flowing",
-  low: "calm peaceful slow motion",
+// Subject pools per visual track — 15+ entries each so 60+ directives never repeat
+const SUBJECTS: Record<string, string[]> = {
+  "nature-epic": [
+    "mountain peak", "river flowing", "forest canopy", "ocean waves", "waterfall cascade",
+    "rocky cliffs", "meadow wildflowers", "ancient trees", "misty valley", "stormy sky",
+    "eagle soaring", "deer in forest", "clouds timelapse", "rain on leaves", "sunlit path",
+    "frozen lake", "volcanic rock", "sand dunes", "canyon walls", "jungle vines",
+  ],
+  "cyberpunk": [
+    "neon city night", "rain wet street", "skyscraper glass", "traffic light trails",
+    "subway crowd", "rooftop cityscape", "holographic signs", "dark alley", "drone swarm",
+    "server room", "night market", "tunnel lights", "reflection puddle", "fire escape stairs",
+    "tokyo intersection", "industrial pipes", "graffiti wall", "electric sparks", "fog machine",
+  ],
+  "urban-street": [
+    "busy street", "cafe window", "market stall", "skate park", "basketball court",
+    "brick wall mural", "fire hydrant steam", "taxi yellow", "park bench", "bridge pedestrian",
+    "graffiti artist", "street musician", "food cart", "newspaper stand", "rooftop view",
+    "crosswalk pedestrians", "bus stop", "storefront neon", "city park", "urban sunset",
+  ],
+  "vintage-film": [
+    "old film grain", "jazz club smoke", "vintage car drive", "retro diner", "black white street",
+    "record player", "old typewriter", "sepia portrait", "flickering candle", "antique clock",
+    "rain on window", "library books", "gramophone", "film reel", "leather chair",
+    "vintage telephone", "dark corridor", "piano keys", "cinema marquee", "newspaper print",
+  ],
+  "astral-space": [
+    "galaxy nebula", "star field", "aurora borealis", "lightning storm", "deep ocean",
+    "solar flare", "lunar surface", "time lapse stars", "crystal cave", "tornado funnel",
+    "bioluminescent water", "volcanic eruption", "ice cave", "floating jellyfish", "comet trail",
+    "desert night sky", "cloud formation", "northern lights", "underwater coral", "shooting stars",
+  ],
+  "abstract-motion": [
+    "paint swirling", "liquid color", "particle explosion", "light bokeh", "glass refraction",
+    "smoke wisps", "ink in water", "mirror reflection", "prism rainbow", "motion blur",
+    "confetti falling", "bubbles rising", "sand art", "fire abstract", "water drops",
+    "neon light painting", "color gradient", "geometric shapes", "crystal shatter", "hologram glow",
+  ],
 }
 
-const typeWords: Record<string, string> = {
-  intro: "aerial reveal establishing",
-  verse: "story narrative journey",
-  "pre-chorus": "anticipation build rising",
-  chorus: "emotional sweeping panorama",
-  hook: "energetic groove vibe",
-  drop: "explosion burst flash",
-  breakdown: "water breath slow",
-  bridge: "reflective transition mood",
-  outro: "sunset fade close",
+const PERSPECTIVES = [
+  "aerial", "close-up", "wide shot", "low angle", "overhead",
+  "eye level", "dutch angle", "over the shoulder", "extreme close-up", "establishing",
+]
+const MOVEMENTS = [
+  "slow motion", "timelapse", "smooth pan", "handheld", "static",
+  "zoom in", "tracking shot", "dolly", "flythrough", "pull back",
+]
+
+function buildQuery(
+  visualTrack: string,
+  subjectIndex: number,
+  directiveIndex: number,
+  energyWord: string
+): string {
+  const subjects = SUBJECTS[visualTrack] ?? SUBJECTS["nature-epic"]
+  const subject = subjects[subjectIndex % subjects.length]
+  const perspective = PERSPECTIVES[(directiveIndex * 3) % PERSPECTIVES.length]
+  const movement = MOVEMENTS[(directiveIndex * 7) % MOVEMENTS.length]
+
+  // Vary which modifiers we include to avoid long identical queries
+  const parts: string[] = [subject]
+  if (directiveIndex % 3 !== 0) parts.push(perspective)
+  if (directiveIndex % 2 === 0) parts.push(movement)
+  if (energyWord) parts.push(energyWord.split(" ")[0])
+
+  return parts.join(" ")
+}
+
+const energyWord: Record<string, string> = {
+  peak: "intense dynamic",
+  high: "energetic vibrant",
+  medium: "atmospheric scenic",
+  low: "peaceful calm",
+}
+
+// Detect "impact beats" — beats that follow silence or a major energy jump.
+// These get burst-cut treatment (1 image per beat) for dramatic effect.
+function detectImpactBeats(
+  beatTimes: number[],
+  sections: TrackStructure["sections"]
+): Set<number> {
+  const impact = new Set<number>()
+  if (beatTimes.length < 2) return impact
+
+  const avgInterval = (beatTimes[beatTimes.length - 1] - beatTimes[0]) / (beatTimes.length - 1)
+  const silenceGap = avgInterval * 2.5  // gap > 2.5× average = silence before this beat
+
+  // Beats that follow a silence → mark them + next 2 as impact
+  for (let i = 1; i < beatTimes.length; i++) {
+    if (beatTimes[i] - beatTimes[i - 1] > silenceGap) {
+      for (let j = i; j < Math.min(i + 3, beatTimes.length); j++) impact.add(j)
+    }
+  }
+
+  // Section energy jumps: low→any, or any→peak → first 4 beats of new section are impact
+  for (let si = 1; si < sections.length; si++) {
+    const prev = sections[si - 1]
+    const curr = sections[si]
+    const isJump = (prev.energy === "low" && curr.energy !== "low") || curr.energy === "peak"
+    if (!isJump) continue
+    let count = 0
+    for (let bi = 0; bi < beatTimes.length && count < 4; bi++) {
+      if (beatTimes[bi] >= curr.startSec) { impact.add(bi); count++ }
+    }
+  }
+
+  return impact
 }
 
 export function buildDirectives(
   structure: TrackStructure,
   identity: ArtistIdentityData,
-  projectGenre: string
+  _projectGenre: string
 ): VisualDirective[] {
-  const base = identity.signatureMotif || projectGenre
   const beatTimes: number[] = (structure as any).beatTimes ?? []
+  const vt = identity.visualTrack || "nature-epic"
+  let globalIdx = 0
+
+  // Precompute impact beats and index lookup
+  const impactBeats = detectImpactBeats(beatTimes, structure.sections)
+  const beatIndexMap = new Map(beatTimes.map((t, i) => [t, i]))
 
   const directives: VisualDirective[] = []
 
@@ -53,32 +149,47 @@ export function buildDirectives(
     const e = section.energy
     const sectionBeats = beatTimes.filter(t => t >= section.startSec && t < section.endSec)
 
+    const makeDirective = (startSec: number, endSec: number, effectiveEnergy: "low" | "medium" | "high" | "peak") => {
+      const clipDurationSec = Math.max(endSec - startSec, 0.5)
+      const query = buildQuery(vt, globalIdx, globalIdx, energyWord[effectiveEnergy] || "")
+      globalIdx++
+      return {
+        startSec, endSec, type: section.type, energy: effectiveEnergy, clipDurationSec,
+        cutFrequency: 1 / clipDurationSec,
+        effect: (effectiveEnergy === "peak" ? "flash-cut" : effectiveEnergy === "high" ? "zoom-pulse" : effectiveEnergy === "medium" ? "cut" : "cut") as VisualDirective["effect"],
+        visualStyle: (effectiveEnergy === "peak" ? "impact" : effectiveEnergy === "high" ? "signature" : effectiveEnergy === "medium" ? "atmospheric" : "narrative") as VisualDirective["visualStyle"],
+        colorIntensity: effectiveEnergy === "peak" ? 1.3 : effectiveEnergy === "high" ? 1.0 : effectiveEnergy === "medium" ? 0.8 : 0.6,
+        searchQuery: query,
+      }
+    }
+
     if (beatTimes.length > 0 && sectionBeats.length > 0) {
-      const beatGroupSize = e === "peak" ? 1 : e === "high" ? 2 : e === "medium" ? 4 : 8
-      for (let i = 0; i < sectionBeats.length; i += beatGroupSize) {
-        const startSec = sectionBeats[i]
-        const endSec = sectionBeats[Math.min(i + beatGroupSize, sectionBeats.length - 1)] ?? section.endSec
-        const clipDurationSec = Math.max(endSec - startSec, 0.5)
-        const searchQuery = `${base} ${energyWords[e] || ""} ${typeWords[section.type] || ""}`.trim()
-        directives.push({
-          startSec, endSec, type: section.type, energy: e, clipDurationSec,
-          cutFrequency: 1 / clipDurationSec,
-          effect: e === "peak" ? "flash-cut" : e === "high" ? "zoom-pulse" : e === "medium" ? "cut" : "slow-motion",
-          visualStyle: e === "peak" ? "impact" : e === "high" ? "signature" : e === "medium" ? "atmospheric" : "narrative",
-          colorIntensity: e === "peak" ? 1.3 : e === "high" ? 1.0 : e === "medium" ? 0.8 : 0.6,
-          searchQuery,
-        })
+      // Low energy uses 4 beats (not 8) so max ~2s clips; slow-motion removed (broke timing)
+      const beatGroupSize = e === "peak" ? 1 : e === "high" ? 2 : e === "medium" ? 4 : 4
+
+      let i = 0
+      while (i < sectionBeats.length) {
+        const beatIdx = beatIndexMap.get(sectionBeats[i]) ?? -1
+        const isImpact = impactBeats.has(beatIdx)
+        const groupSize = isImpact ? 1 : beatGroupSize
+
+        const start = sectionBeats[i]
+        const end = (i + groupSize < sectionBeats.length)
+          ? sectionBeats[i + groupSize]
+          : section.endSec
+
+        // Impact beats in calm sections get promoted energy for more dynamic effect + query
+        const eff: "low" | "medium" | "high" | "peak" =
+          isImpact && e === "low" ? "medium" :
+          isImpact && e === "medium" ? "high" : e
+
+        directives.push(makeDirective(start, end, eff))
+        i += groupSize
       }
     } else {
-      const clipDurationSec = e === "peak" ? 1.5 : e === "high" ? 3 : e === "medium" ? 6 : section.endSec - section.startSec
-      directives.push({
-        startSec: section.startSec, endSec: section.endSec, type: section.type, energy: e,
-        clipDurationSec, cutFrequency: 1 / clipDurationSec,
-        effect: e === "peak" ? "flash-cut" : e === "high" ? "zoom-pulse" : e === "medium" ? "cut" : "slow-motion",
-        visualStyle: e === "peak" ? "impact" : e === "high" ? "signature" : e === "medium" ? "atmospheric" : "narrative",
-        colorIntensity: e === "peak" ? 1.3 : e === "high" ? 1.0 : e === "medium" ? 0.8 : 0.6,
-        searchQuery: `${base} ${energyWords[e] || ""} ${typeWords[section.type] || ""}`.trim(),
-      })
+      // No beats in section: fallback to one clip
+      const clipDur = e === "peak" ? 1.5 : e === "high" ? 3 : e === "medium" ? 4 : 4
+      directives.push(makeDirective(section.startSec, Math.min(section.startSec + clipDur, section.endSec), e))
     }
   }
 

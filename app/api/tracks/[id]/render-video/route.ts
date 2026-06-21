@@ -26,6 +26,7 @@ export async function POST(
 
     const body = await req.json().catch(() => ({}))
     const visualTrack = body.visualTrack || "auto"
+    const preview = !!body.preview  // true = 720p for Telegram review; false = full quality
 
     // Cancel any existing active jobs for this track to avoid duplicates
     await prisma.videoJob.updateMany({
@@ -45,6 +46,7 @@ export async function POST(
       trackId: track.id,
       visualTrack,
       videoJobId: videoJob.id,
+      preview,
     })
 
     return NextResponse.json({ videoJob }, { status: 201 })

@@ -13,7 +13,7 @@ import { analyzeAudioLocally } from "@/lib/librosa-analysis"
 import { extractLyricsFromAudio, extractLyricsWithTimestamps, extractLyricsGeminiFallback, WhisperSegment } from "@/lib/lyrics-extractor"
 import { buildDirectives, generateArtistIdentity } from "@/lib/visual-director"
 import { fetchAndCacheSunoCredits } from "@/lib/system-status"
-import { findClipForDirective } from "@/lib/clip-library"
+import { buildClipPool, findClipForDirective } from "@/lib/clip-library"
 import { assembleVideo, assembleFullVideo } from "@/lib/video-assembler"
 import { renderIntro } from "@/lib/intro-renderer"
 import { uploadToYouTube, buildYouTubeDescription } from "@/lib/youtube-client"
@@ -512,7 +512,7 @@ async function handleAnalyzeImportedTrack(job: { id: string; payload: string; va
 }
 
 async function handleVideoRenderJob(job: { id: string; payload: string; variantId: string | null }) {
-  const { trackId, visualTrack, videoJobId } = JSON.parse(job.payload)
+  const { trackId, visualTrack, videoJobId, preview = false } = JSON.parse(job.payload)
 
   await prisma.videoJob.update({ where: { id: videoJobId }, data: { status: "rendering" } })
 
@@ -541,19 +541,18 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
 
   const directives = buildDirectives(structure, identityData, project.genre)
 
-  const recentlyUsed = new Set<string>()
+  // Build a pool of 60+ unique clips upfront, then assign cyclically
+  const audioDur = structure.totalDurationSec || 240
+  const targetPoolSize = Math.max(60, Math.ceil(audioDur / 3))
+  const pool = await buildClipPool(directives, targetPoolSize, project.id)
+
   const clips = new Map<number, import("@/lib/clip-library").ClipResult>()
-  for (let i = 0; i < directives.length; i++) {
-    const clip = await findClipForDirective(directives[i], project.id, recentlyUsed)
-    if (clip) {
-      clips.set(i, clip)
-      recentlyUsed.add(clip.id)
-      if (recentlyUsed.size > 8) {
-        const first = recentlyUsed.values().next().value
-        if (first) recentlyUsed.delete(first)
-      }
+  if (pool.length > 0) {
+    for (let i = 0; i < directives.length; i++) {
+      clips.set(i, pool[i % pool.length])
     }
   }
+  console.log(`[VideoRender] ${directives.length} directives, ${pool.length} unique clips in pool`)
 
   const brollPath = path.join(project.folderPath, `outputs/videos/${track.id}-broll.mp4`)
   await assembleVideo({
@@ -563,6 +562,7 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     identity: identityData,
     outputPath: brollPath,
     title: `${project.title} — ${track.versionName || "Mix"}`,
+    preview,
   })
 
   const videoJob = await prisma.videoJob.findUnique({ where: { id: videoJobId } })
@@ -578,6 +578,7 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     audioPath: path.join(project.folderPath, track.audioPath),
     srtPath,
     outputPath: finalOutputPath,
+    preview,
   })
 
   const thumbnailPath = path.join(project.folderPath, `outputs/videos/${track.id}-thumb.jpg`)
@@ -651,7 +652,7 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
 }
 
 async function handleIntroRenderJob(job: { id: string; payload: string; variantId: string | null }) {
-  const { trackId, videoJobId } = JSON.parse(job.payload)
+  const { trackId, videoJobId, preview = false } = JSON.parse(job.payload)
 
   await prisma.videoJob.update({ where: { id: videoJobId }, data: { status: "rendering" } })
 
@@ -695,7 +696,7 @@ async function handleIntroRenderJob(job: { id: string; payload: string; variantI
     data: { introPath: path.relative(project.folderPath, introOutputPath) },
   })
 
-  await enqueue("video_render", null, { trackId, videoJobId, skipIntro: true })
+  await enqueue("video_render", null, { trackId, videoJobId, skipIntro: true, preview })
 }
 
 async function processJob() {

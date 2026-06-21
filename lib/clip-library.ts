@@ -27,23 +27,45 @@ async function downloadClip(url: string, destPath: string): Promise<boolean> {
   }
 }
 
-async function searchPexels(query: string, minDuration: number): Promise<{ url: string; duration: number; id: string; tags: string[] } | null> {
+type PexelsResult = { url: string; duration: number; id: string; tags: string[]; width: number; height: number }
+
+async function searchPexelsMany(
+  query: string,
+  minDuration: number,
+  count: number,
+  page = 1
+): Promise<PexelsResult[]> {
   const apiKey = process.env.PEXELS_API_KEY
-  if (!apiKey) return null
+  if (!apiKey) return []
   try {
     const q = encodeURIComponent(query)
     const res = await fetch(
-      `https://api.pexels.com/videos/search?query=${q}&per_page=10&min_duration=${Math.floor(minDuration)}`,
+      `https://api.pexels.com/videos/search?query=${q}&per_page=${Math.min(count * 2, 15)}&page=${page}&min_duration=${Math.floor(minDuration)}&orientation=landscape`,
       { headers: { Authorization: apiKey } }
     )
-    if (!res.ok) return null
+    if (!res.ok) return []
     const data = await res.json()
-    const video = data?.videos?.[0]
-    if (!video) return null
-    const file = video.video_files?.find((f: { quality: string; width: number }) => f.quality === "hd" && f.width >= 1920) ?? video.video_files?.[0]
-    if (!file?.link) return null
-    return { url: file.link, duration: video.duration, id: String(video.id), tags: [] }
-  } catch { return null }
+    const videos: unknown[] = data?.videos ?? []
+    const results: PexelsResult[] = []
+    for (const video of videos) {
+      const v = video as { id: number; duration: number; video_files: Array<{ quality: string; width: number; height: number; link: string }> }
+      // Only include landscape files (width > height)
+      const landscape = v.video_files?.filter(f => f.width > f.height) ?? []
+      const file = landscape.find(f => f.quality === "hd" && f.width >= 1280)
+        ?? landscape.find(f => f.width >= 1280)
+        ?? landscape[0]
+      if (file?.link) {
+        results.push({ url: file.link, duration: v.duration, id: String(v.id), tags: [], width: file.width, height: file.height })
+      }
+      if (results.length >= count) break
+    }
+    return results
+  } catch { return [] }
+}
+
+async function searchPexels(query: string, minDuration: number): Promise<PexelsResult | null> {
+  const results = await searchPexelsMany(query, minDuration, 1)
+  return results[0] ?? null
 }
 
 async function searchPixabay(query: string, minDuration: number): Promise<{ url: string; duration: number; id: string; tags: string[] } | null> {
@@ -102,14 +124,14 @@ export async function findClipForDirective(
   }
 
   // 2. Search APIs
-  let found: { url: string; duration: number; id: string; tags: string[]; source: "pexels" | "pixabay" } | null = null
+  let found: { url: string; duration: number; id: string; tags: string[]; width: number; height: number; source: "pexels" | "pixabay" } | null = null
 
   const pexels = await searchPexels(directive.searchQuery, minDuration)
   if (pexels) found = { ...pexels, source: "pexels" }
 
   if (!found) {
     const pixabay = await searchPixabay(directive.searchQuery, minDuration)
-    if (pixabay) found = { ...pixabay, source: "pixabay" }
+    if (pixabay) found = { ...pixabay, width: 1920, height: 1080, source: "pixabay" }
   }
 
   if (!found) return null
@@ -154,8 +176,8 @@ export async function findClipForDirective(
       query: directive.searchQuery,
       localPath: relPath,
       duration: found.duration,
-      width: 1920,
-      height: 1080,
+      width: found.width,
+      height: found.height,
       tags: JSON.stringify(found.tags),
       usageCount: 1,
       lastUsedAt: new Date(),
@@ -175,4 +197,76 @@ export async function findClipForDirective(
     height: 1080,
     source: found.source,
   }
+}
+
+export async function buildClipPool(
+  directives: VisualDirective[],
+  targetCount: number,
+  _projectId: string
+): Promise<ClipResult[]> {
+  // Collect unique queries from directives
+  const uniqueQueries = [...new Set(directives.map(d => d.searchQuery))]
+  const minDur = 4 // minimum clip duration in seconds
+
+  const pool: ClipResult[] = []
+  const seenIds = new Set<string>()
+
+  // Download clips in batches per query — vary the page to get different results
+  for (let qi = 0; qi < uniqueQueries.length && pool.length < targetCount; qi++) {
+    const query = uniqueQueries[qi]
+    const page = (qi % 3) + 1 // rotate pages 1, 2, 3
+    const candidates = await searchPexelsMany(query, minDur, 4, page)
+
+    for (const found of candidates) {
+      if (seenIds.has(found.id)) continue
+      seenIds.add(found.id)
+
+      const clipId = `pexels-${found.id}`
+      const relPath = `${clipId}.mp4`
+      const localPath = path.join(CLIPS_BASE, relPath)
+
+      // Check DB + disk cache
+      const dbClip = await prisma.clip.findUnique({
+        where: { sourceApi_externalId: { sourceApi: "pexels", externalId: found.id } },
+      })
+      if (dbClip && !dbClip.isRejected && dbClip.width > dbClip.height) {
+        try {
+          await fs.access(path.join(CLIPS_BASE, dbClip.localPath))
+          pool.push({
+            id: dbClip.id, url: found.url,
+            localPath: path.join(CLIPS_BASE, dbClip.localPath),
+            durationSec: dbClip.duration, width: dbClip.width, height: dbClip.height,
+            source: "cache",
+          })
+          continue
+        } catch { /* re-download */ }
+      }
+
+      const ok = await downloadClip(found.url, localPath)
+      if (!ok) continue
+
+      const clip = await prisma.clip.upsert({
+        where: { sourceApi_externalId: { sourceApi: "pexels", externalId: found.id } },
+        create: {
+          sourceApi: "pexels", externalId: found.id, query,
+          localPath: relPath, duration: found.duration,
+          width: found.width, height: found.height, tags: "[]",
+          usageCount: 0, lastUsedAt: new Date(),
+        },
+        update: {},
+      })
+
+      pool.push({ id: clip.id, url: found.url, localPath, durationSec: found.duration, width: found.width, height: found.height, source: "pexels" })
+      if (pool.length >= targetCount) break
+    }
+  }
+
+  // Shuffle pool for variety
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+
+  console.log(`[ClipPool] Built pool: ${pool.length} clips from ${uniqueQueries.length} queries`)
+  return pool
 }

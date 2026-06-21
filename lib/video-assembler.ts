@@ -12,6 +12,7 @@ export interface AssemblyInput {
   identity: ArtistIdentityData
   outputPath: string
   title: string
+  preview?: boolean  // true = 720p/ultrafast for Telegram review; false = 1080p full quality
 }
 
 async function getVideoDuration(filePath: string): Promise<number> {
@@ -25,9 +26,14 @@ async function getVideoDuration(filePath: string): Promise<number> {
 }
 
 export async function assembleVideo(input: AssemblyInput): Promise<string> {
-  const { audioPath, directives, clips, outputPath, title: _title } = input
+  const { audioPath, directives, clips, outputPath, title: _title, preview = false } = input
   const workDir = path.dirname(outputPath)
   await fs.mkdir(workDir, { recursive: true })
+
+  // Preview = 720p/ultrafast for fast Telegram review; full = 1080p
+  const res = preview ? "1280:720" : "1920:1080"
+  const crf = preview ? 28 : 23
+  const preset = preview ? "ultrafast" : "fast"
 
   const segmentFiles: string[] = []
 
@@ -37,46 +43,46 @@ export async function assembleVideo(input: AssemblyInput): Promise<string> {
     if (!clip) continue
 
     const tmpClip = path.join(workDir, `seg-${i}-clip.mp4`)
-    const clipDuration = Math.min(d.clipDurationSec, d.endSec - d.startSec)
+    const clipDuration = Math.max(Math.min(d.clipDurationSec, d.endSec - d.startSec), 0.1)
 
-    // Trim clip to desired duration
+    // Random seek: 35% of clips start at a random offset (max 2s into clip)
+    const clipFileDur = await getVideoDuration(clip.localPath).catch(() => clipDuration + 2)
+    const maxSeek = Math.max(0, clipFileDur - clipDuration - 0.5)
+    const seekOffset = (Math.random() > 0.65 && maxSeek > 0.5)
+      ? Math.random() * Math.min(maxSeek, 2.0)
+      : 0
+
+    // fps=30 in filter chain normalizes all clips to CFR 30 — prevents concat stuttering
     execSync(
-      `ffmpeg -y -ss 0 -t ${clipDuration} -i "${clip.localPath}" ` +
-      `-vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1" ` +
-      `-c:v libx264 -preset fast -crf 23 -an "${tmpClip}"`,
-      { timeout: 60000, stdio: "pipe" }
+      `ffmpeg -y -ss ${seekOffset.toFixed(3)} -t ${clipDuration.toFixed(3)} -i "${clip.localPath}" ` +
+      `-vf "scale=${res}:force_original_aspect_ratio=decrease,pad=${res}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30" ` +
+      `-c:v libx264 -preset ${preset} -crf ${crf} -an "${tmpClip}"`,
+      { timeout: 60000, stdio: "ignore" }
     )
 
     const segFile = path.join(workDir, `seg-${i}.mp4`)
     segmentFiles.push(segFile)
 
     if (d.effect === "flash-cut") {
-      // Insert a white flash frame (0.04s) before segment
+      // Insert a brief white flash frame before the cut
       const flashFile = path.join(workDir, `seg-${i}-flash.mp4`)
+      const flashRes = res.replace(":", "x")
       execSync(
-        `ffmpeg -y -f lavfi -i "color=c=white:s=1920x1080:d=0.04" -c:v libx264 -preset fast -crf 23 "${flashFile}"`,
-        { timeout: 30000, stdio: "pipe" }
+        `ffmpeg -y -f lavfi -i "color=c=white:s=${flashRes}:d=0.04:r=30" -c:v libx264 -preset ${preset} -crf ${crf} "${flashFile}"`,
+        { timeout: 30000, stdio: "ignore" }
       )
-      // Concatenate flash + clip
       const concatList = path.join(workDir, `seg-${i}-concat.txt`)
       await fs.writeFile(concatList, `file '${flashFile}'\nfile '${tmpClip}'\n`)
       execSync(
         `ffmpeg -y -f concat -safe 0 -i "${concatList}" -c copy "${segFile}"`,
-        { timeout: 60000, stdio: "pipe" }
+        { timeout: 60000, stdio: "ignore" }
       )
       await fs.unlink(flashFile).catch(() => {})
-    } else if (d.effect === "slow-motion") {
-      execSync(
-        `ffmpeg -y -i "${tmpClip}" -vf "setpts=2.0*PTS" -an -c:v libx264 -preset fast -crf 23 "${segFile}"`,
-        { timeout: 60000, stdio: "pipe" }
-      )
     } else {
-      // For cut/zoom-pulse: just use the trimmed clip
-      if (tmpClip !== segFile) {
-        await fs.copyFile(tmpClip, segFile).catch(() => {
-          execSync(`cp "${tmpClip}" "${segFile}"`, { timeout: 30000, stdio: "pipe" })
-        })
-      }
+      // cut / zoom-pulse — use trimmed clip directly (no slow-motion: it broke beat timing)
+      await fs.copyFile(tmpClip, segFile).catch(() => {
+        execSync(`cp "${tmpClip}" "${segFile}"`, { timeout: 30000, stdio: "ignore" })
+      })
     }
 
     await fs.unlink(tmpClip).catch(() => {})
@@ -98,23 +104,23 @@ export async function assembleVideo(input: AssemblyInput): Promise<string> {
   const concatVideo = path.join(workDir, "concat-video.mp4")
   execSync(
     `ffmpeg -y -f concat -safe 0 -i "${concatFile}" -c copy "${concatVideo}"`,
-    { timeout: 120000, stdio: "pipe" }
+    { timeout: 120000, stdio: "ignore" }
   )
 
   // If video is shorter than audio, loop the video; if longer, trim
   const videoDur = await getVideoDuration(concatVideo)
 
-  // Overlay audio on video
+  // Overlay audio on broll (assembleFullVideo will re-mux for final output)
   if (audioDur > 0 && videoDur > 0) {
     execSync(
-      `ffmpeg -y -i "${concatVideo}" -i "${audioPath}" -c:v libx264 -preset medium -crf 18 ` +
+      `ffmpeg -y -i "${concatVideo}" -i "${audioPath}" -c:v libx264 -preset ${preset} -crf ${crf} ` +
       `-c:a aac -b:a 192k -shortest -pix_fmt yuv420p -movflags +faststart "${outputPath}"`,
-      { timeout: 120000, stdio: "pipe" }
+      { timeout: 120000, stdio: "ignore" }
     )
   } else {
     // Just copy video as-is
     await fs.copyFile(concatVideo, outputPath).catch(() => {
-      execSync(`cp "${concatVideo}" "${outputPath}"`, { timeout: 30000, stdio: "pipe" })
+      execSync(`cp "${concatVideo}" "${outputPath}"`, { timeout: 30000, stdio: "ignore" })
     })
   }
 
@@ -134,8 +140,9 @@ export async function assembleFullVideo(input: {
   audioPath: string
   srtPath: string | null
   outputPath: string
+  preview?: boolean
 }): Promise<string> {
-  const { introPath, brollPath, audioPath, srtPath, outputPath } = input
+  const { introPath, brollPath, audioPath, srtPath, outputPath, preview = false } = input
   const workDir = path.join(os.tmpdir(), `amf-assemble-${Date.now()}`)
   await fs.mkdir(workDir, { recursive: true })
 
@@ -150,7 +157,7 @@ export async function assembleFullVideo(input: {
       const combinedPath = path.join(workDir, "combined.mp4")
       execSync(
         `ffmpeg -y -f concat -safe 0 -i "${concatList}" -c copy "${combinedPath}"`,
-        { timeout: 120_000, stdio: "pipe" }
+        { timeout: 120_000, stdio: "ignore" }
       )
       videoSource = combinedPath
     }
@@ -160,22 +167,18 @@ export async function assembleFullVideo(input: {
 
     const srtFilter = srtPath ? `,subtitles='${srtPath.replace(/'/g, "\\'")}'` : ""
 
-    if (videoDur < audioDur) {
-      // Loop video to cover full audio length
-      execSync(
-        `ffmpeg -y -stream_loop -1 -i "${videoSource}" -i "${audioPath}" ` +
-        `-map 0:v -map 1:a -vf "setpts=PTS-STARTPTS${srtFilter}" ` +
-        `-c:v libx264 -preset fast -b:v 12000k -c:a aac -b:a 320k -t ${audioDur} "${outputPath}"`,
-        { timeout: 600_000, stdio: "pipe" }
-      )
-    } else {
-      execSync(
-        `ffmpeg -y -i "${videoSource}" -i "${audioPath}" ` +
-        `-map 0:v -map 1:a -vf "setpts=PTS-STARTPTS${srtFilter}" ` +
-        `-c:v libx264 -preset fast -b:v 12000k -c:a aac -b:a 320k -t ${audioDur} "${outputPath}"`,
-        { timeout: 600_000, stdio: "pipe" }
-      )
-    }
+    // Preview: smaller bitrate for fast Telegram delivery; full: high bitrate for YouTube
+    const vpreset = preview ? "ultrafast" : "fast"
+    const vbitrate = preview ? "2000k" : "12000k"
+    const abitrate = preview ? "128k" : "320k"
+
+    const loopFlag = videoDur < audioDur ? "-stream_loop -1" : ""
+    execSync(
+      `ffmpeg -y ${loopFlag} -i "${videoSource}" -i "${audioPath}" ` +
+      `-map 0:v -map 1:a -vf "setpts=PTS-STARTPTS${srtFilter}" ` +
+      `-c:v libx264 -preset ${vpreset} -b:v ${vbitrate} -c:a aac -b:a ${abitrate} -t ${audioDur} "${outputPath}"`,
+      { timeout: 600_000, stdio: "ignore" }
+    )
 
     return outputPath
   } finally {
