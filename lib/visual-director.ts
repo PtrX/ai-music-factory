@@ -140,6 +140,14 @@ export function buildDirectives(
   const beatTimes: number[] = (structure as any).beatTimes ?? []
   const beatStrength: number[] = (structure as any).beatStrength ?? []
   const hasStrength = beatStrength.length === beatTimes.length && beatTimes.length > 0
+  // Downbeat phase: in 4/4 the bar's "1" carries the most accent energy. Find
+  // which beat-of-4 (0..3) does, so the cut grid can land on bar starts.
+  let downbeatPhase = 0
+  if (hasStrength) {
+    const sums = [0, 0, 0, 0]
+    for (let i = 0; i < beatStrength.length; i++) sums[i % 4] += beatStrength[i]
+    downbeatPhase = sums.indexOf(Math.max(...sums))
+  }
   const vt = identity.visualTrack || "nature-epic"
   let globalIdx = 0
 
@@ -211,11 +219,15 @@ export function buildDirectives(
       // sections cut on a tighter beat grid.
       const groupSize = e === "peak" ? 1 : e === "high" ? 2 : e === "medium" ? 4 : 8
 
-      for (let k = 0; k < idxs.length; k += groupSize) {
-        bounds.push({ time: beatTimes[idxs[k]], energy: e, accent: false })
+      // Phase the cut grid to the downbeat (using GLOBAL beat index) so a cut
+      // lands on the bar's "1" — not on an arbitrary beat within the bar.
+      for (const gi of idxs) {
+        if ((((gi - downbeatPhase) % groupSize) + groupSize) % groupSize === 0) {
+          bounds.push({ time: beatTimes[gi], energy: e, accent: false })
+        }
       }
-      for (const i of idxs) {
-        if (isAccent(i)) bounds.push({ time: beatTimes[i], energy: "high", accent: true })
+      for (const gi of idxs) {
+        if (isAccent(gi)) bounds.push({ time: beatTimes[gi], energy: "high", accent: true })
       }
     }
 
