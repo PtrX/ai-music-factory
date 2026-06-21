@@ -512,7 +512,7 @@ async function handleAnalyzeImportedTrack(job: { id: string; payload: string; va
 }
 
 async function handleVideoRenderJob(job: { id: string; payload: string; variantId: string | null }) {
-  const { trackId, visualTrack, videoJobId, preview = false } = JSON.parse(job.payload)
+  const { trackId, visualTrack, videoJobId } = JSON.parse(job.payload)
 
   await prisma.videoJob.update({ where: { id: videoJobId }, data: { status: "rendering" } })
 
@@ -562,7 +562,6 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     identity: identityData,
     outputPath: brollPath,
     title: `${project.title} — ${track.versionName || "Mix"}`,
-    preview,
   })
 
   const videoJob = await prisma.videoJob.findUnique({ where: { id: videoJobId } })
@@ -578,7 +577,6 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     audioPath: path.join(project.folderPath, track.audioPath),
     srtPath,
     outputPath: finalOutputPath,
-    preview,
   })
 
   const thumbnailPath = path.join(project.folderPath, `outputs/videos/${track.id}-thumb.jpg`)
@@ -652,7 +650,7 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
 }
 
 async function handleIntroRenderJob(job: { id: string; payload: string; variantId: string | null }) {
-  const { trackId, videoJobId, preview = false } = JSON.parse(job.payload)
+  const { trackId, videoJobId } = JSON.parse(job.payload)
 
   await prisma.videoJob.update({ where: { id: videoJobId }, data: { status: "rendering" } })
 
@@ -696,7 +694,7 @@ async function handleIntroRenderJob(job: { id: string; payload: string; variantI
     data: { introPath: path.relative(project.folderPath, introOutputPath) },
   })
 
-  await enqueue("video_render", null, { trackId, videoJobId, skipIntro: true, preview })
+  await enqueue("video_render", null, { trackId, videoJobId, skipIntro: true })
 }
 
 async function processJob() {
