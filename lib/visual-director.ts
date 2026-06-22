@@ -164,7 +164,12 @@ export function buildDirectives(
   // the top phases are near-tied (ambiguous meter), break the tie by which
   // phase carries the most real ACCENTS — those are reliable downbeat markers.
   let downbeatPhase = 0
-  if (hasStrength) {
+  const phaseOverride = (structure as any).downbeatPhase
+  if (typeof phaseOverride === "number" && phaseOverride >= 0 && phaseOverride <= 3) {
+    // Manual override for tracks whose meter is too ambiguous/inconsistent for
+    // auto-detection (e.g. backbeat-dominant or with beat-tracker phase errors).
+    downbeatPhase = Math.round(phaseOverride)
+  } else if (hasStrength) {
     const sums = [0, 0, 0, 0]
     for (let i = 0; i < beatStrength.length; i++) sums[i % 4] += beatStrength[i]
     const maxSum = Math.max(...sums)

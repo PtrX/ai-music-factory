@@ -55,6 +55,11 @@
 
 ---
 
+## 🎵 Genre-/Musik-Wissen
+
+- **Afro-House (und verwandte Afro-Stile):** Das Intro/der Anfang ist rhythmisch bewusst **lose/polyrhythmisch** („chaotisch wirkende" Schläge) und rastet erst **zur Mitte hin** in den durchgehenden 4/4-Groove ein. → Im losen Anfangsteil **kein starres Downbeat-Raster erzwingen** (es gibt dort keine eindeutige „1"); dort **Akzent-Schnitte + lange Holds** nutzen (folgen den echten Hits). Downbeat-Ausrichtung greift sinnvoll erst im stabilen Groove. Beobachtet an track_b2: starke Schläge früh über Phasen verteilt, im Höhepunkt klar auf einer Phase.
+- **Downbeat-Auto-Erkennung ist nicht immer eindeutig** (Backbeat lauter als Kick, Beat-Tracker-Phasenfehler, lose Intros). Bei Bedarf `structure.downbeatPhase` (0–3) manuell setzen — überschreibt die Auto-Phase.
+
 ## ⚠️ Gotchas (Betrieb)
 
 - **tsx lädt nicht neu** — nach Code-Änderung Worker **neu starten**, sonst alter Code.
