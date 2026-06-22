@@ -67,32 +67,11 @@ async function refreshAccessToken(refreshToken: string): Promise<StoredTokens> {
   return tokens
 }
 
-export function buildYouTubeDescription(structure: TrackStructure, sunoStyle: string): string {
-  const emojiMap: Record<string, string> = {
-    intro: "🌅",
-    verse: "📖",
-    "pre-chorus": "🌄",
-    chorus: "🎵",
-    hook: "🔊",
-    drop: "🔥",
-    breakdown: "🌊",
-    bridge: "🌉",
-    outro: "🌙",
-  }
-
-  const chapters = structure.sections
-    .filter((s) => s.type)
-    .map((s) => {
-      const emoji = emojiMap[s.type] || "▪"
-      const minutes = Math.floor(s.startSec / 60)
-      const seconds = Math.floor(s.startSec % 60)
-      const time = `${minutes}:${seconds.toString().padStart(2, "0")}`
-      const label = s.type.charAt(0).toUpperCase() + s.type.slice(1)
-      return `${time} ${emoji} ${label}`
-    })
-    .join("\n")
-
-  return `${chapters}\n\nProduced with AI Music Factory\nStyle: ${sunoStyle}`
+export function buildYouTubeDescription(_structure: TrackStructure, sunoStyle: string): string {
+  // Minimal description per user preference ("nicht so viel"). Full layout
+  // (chapters etc.) to be designed later. Pull just the genre from the style.
+  const genre = (sunoStyle.match(/Genre:\s*([^,\n]+)/i)?.[1] ?? "").trim()
+  return genre ? `${genre} · AI Music Factory` : "AI Music Factory"
 }
 
 export async function uploadToYouTube(opts: YouTubeUploadOpts): Promise<YouTubeUploadResult> {
