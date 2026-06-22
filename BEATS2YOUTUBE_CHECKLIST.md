@@ -49,7 +49,7 @@
 - [ ] **Kein zeit-addierender Flash-Cut**: das alte `flash-cut` hängte je 0,04 s weißes Frame VOR den Clip → Drift. Akzente nutzen aktuell **saubere Schnitte** (energy `high`), kein Flash. Falls Flash gewünscht: muss drift-neutral sein (Clip um Flash-Dauer kürzen, nicht anhängen).
 - [ ] **Worker nicht mitten im Render mit `-9` killen** ohne ffmpeg-Reap → CPU-Zombies (beobachtet: 3 h alte Encodes bei 600 % CPU, bremsten jeden Render). Graceful beenden oder auf Startup-Cleanup verlassen.
 - [ ] **Nicht auf `structure.totalDurationSec` verlassen** — ffprobe nutzen.
-- [ ] **Telegram nicht zum Video-Review nutzen**: das Bot-Tool sendet mp4 nur als *Dokument* → beim Nutzer nur Standbild, nicht abspielbar. Review immer **lokal** (`open …mp4`) oder via YouTube-Link. (Sehr kleine mp4 ≤ ~5 MB spielen evtl.)
+- [ ] **NICHT das Plugin-Tool (MyClaude-Bot) für Video-Review** nutzen — es sendet mp4 als *Dokument* → nur Standbild. **Stattdessen: `sendVideo` über den AI-Music-Factory-Bot** (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` aus `.env.local`), dann ist es abspielbar UND auf dem richtigen Bot. **Pflicht:** `-F width=… -F height=…` mitschicken, sonst zeigt Telegram es verzerrt/quadratisch. Bot-API-Limit: 50 MB → komprimierte 540p-Version senden. Beispiel: `curl -F chat_id=$CHAT -F video=@clip.mp4 -F width=960 -F height=540 -F supports_streaming=true .../sendVideo`
 - [ ] **YouTube-Upload ist `privacyStatus: "public"`** — nie ohne Bestätigung hochladen.
 - [ ] **Clip-Pool < Directives** ⇒ Wiederholungen. Aktuell Pool 80 vs ~150 Directives → ~70 Wdh. Bei Bedarf `targetPoolSize` hoch oder Pixabay als 2. Quelle in `buildClipPool`.
 

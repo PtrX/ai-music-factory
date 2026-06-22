@@ -140,13 +140,45 @@ export function buildDirectives(
   const beatTimes: number[] = (structure as any).beatTimes ?? []
   const beatStrength: number[] = (structure as any).beatStrength ?? []
   const hasStrength = beatStrength.length === beatTimes.length && beatTimes.length > 0
+
+  // An "accent" is a STANDOUT percussive hit (a big drum) — a local peak in
+  // onset strength, not merely a loud steady beat. Used both to force cuts on
+  // hits and to disambiguate the downbeat phase.
+  const ACCENT_ABS = 0.45   // must be at least this strong (0..1)
+  const ACCENT_REL = 2.0    // and at least this × the local average
+  const isAccent = (i: number): boolean => {
+    if (!hasStrength) return false
+    const s = beatStrength[i]
+    if (s < ACCENT_ABS) return false
+    let sum = 0, n = 0
+    for (let k = i - 2; k <= i + 2; k++) {
+      if (k === i || k < 0 || k >= beatStrength.length) continue
+      sum += beatStrength[k]; n++
+    }
+    const localAvg = n ? sum / n : 0
+    return s >= ACCENT_REL * localAvg
+  }
+
   // Downbeat phase: in 4/4 the bar's "1" carries the most accent energy. Find
-  // which beat-of-4 (0..3) does, so the cut grid can land on bar starts.
+  // which beat-of-4 (0..3) does, so the cut grid can land on bar starts. When
+  // the top phases are near-tied (ambiguous meter), break the tie by which
+  // phase carries the most real ACCENTS — those are reliable downbeat markers.
   let downbeatPhase = 0
   if (hasStrength) {
     const sums = [0, 0, 0, 0]
     for (let i = 0; i < beatStrength.length; i++) sums[i % 4] += beatStrength[i]
-    downbeatPhase = sums.indexOf(Math.max(...sums))
+    const maxSum = Math.max(...sums)
+    const candidates = [0, 1, 2, 3].filter(p => sums[p] >= maxSum * 0.85)
+    if (candidates.length <= 1) {
+      downbeatPhase = sums.indexOf(maxSum)
+    } else {
+      const accentCount = [0, 0, 0, 0]
+      for (let i = 0; i < beatStrength.length; i++) if (isAccent(i)) accentCount[i % 4]++
+      downbeatPhase = candidates.reduce(
+        (best, p) => (accentCount[p] > accentCount[best] ? p : best),
+        candidates[0]
+      )
+    }
   }
   const vt = identity.visualTrack || "nature-epic"
   let globalIdx = 0
@@ -186,24 +218,6 @@ export function buildDirectives(
   }
 
   if (beatTimes.length > 0) {
-    // An "accent" is a STANDOUT percussive hit (a big drum), i.e. a local peak
-    // in onset strength — not merely a loud steady beat. We force a scene change
-    // EXACTLY on these so cuts land on the hit, not a beat later.
-    const ACCENT_ABS = 0.45   // must be at least this strong (0..1)
-    const ACCENT_REL = 2.0    // and at least this × the local average
-    const isAccent = (i: number): boolean => {
-      if (!hasStrength) return false
-      const s = beatStrength[i]
-      if (s < ACCENT_ABS) return false
-      let sum = 0, n = 0
-      for (let k = i - 2; k <= i + 2; k++) {
-        if (k === i || k < 0 || k >= beatStrength.length) continue
-        sum += beatStrength[k]; n++
-      }
-      const localAvg = n ? sum / n : 0
-      return s >= ACCENT_REL * localAvg
-    }
-
     // 1) Collect clip-start boundaries. `energy` is the energy of the clip that
     //    STARTS at that boundary (accents start a punchy clip).
     const bounds: { time: number; energy: Energy; accent: boolean }[] = []
