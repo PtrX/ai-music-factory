@@ -101,6 +101,15 @@ Review immer **lokal** öffnen (`open "$F"`), nicht über Telegram beurteilen.
 - [x] Abspielbare Freigabe-Karte mit Buttons (sendVideo).
 - [x] Intro-Hintergrund pro Track variiert.
 
+## 📝 YouTube-Beschreibung (Design abgestimmt, noch zu bauen)
+
+3-teilig, nicht überladen, **kein** Genre-/BPM-/Prompt-Dump:
+1. **Vibe-Zeile** aus `track.aiNotes` — ohne LLM, nur der **erste positive Satz** (Kritik-Teil ab „While …"/„What holds it back …" weglassen — `aiNotes` sind Kritiker-Notizen).
+2. **AI Music Factory** erwähnen.
+3. **Hook/CTA**: Kommentar-Aufruf „wie wird sowas produziert" (kleine Kampagne).
+Stil darf im Fließtext natürlich vorkommen. Beschreibungen sind per API später editierbar.
+- [ ] **DNA-Bereiche als Kapitelmarken** (`0:00 …`): Blocker — `structure.sections` haben kein `type` → erst Labels herstellen (Analyse `type` setzen oder aus `energy`/Position ableiten).
+
 ## 📋 Offene Punkte
 
 - [ ] `detectImpactBeats` (toter Code) entfernen.
