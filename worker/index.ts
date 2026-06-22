@@ -614,6 +614,19 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     )
   } catch { /* thumbnail optional */ }
 
+  // Compressed 540p preview (<50MB) so the Telegram approval card can be a
+  // PLAYABLE video (Bot API caps uploads at 50MB; the full 1080p is ~135MB).
+  const previewPath = path.join(project.folderPath, `outputs/videos/${track.id}-preview.mp4`)
+  let previewExists = false
+  try {
+    execSync(
+      `ffmpeg -y -i "${finalOutputPath}" -vf "scale=960:540:flags=bicubic" ` +
+      `-c:v libx264 -preset veryfast -crf 30 -c:a aac -b:a 96k -movflags +faststart "${previewPath}"`,
+      { timeout: 120_000, stdio: "ignore" }
+    )
+    previewExists = true
+  } catch { /* preview optional — falls back to thumbnail/text */ }
+
   await prisma.videoJob.update({
     where: { id: videoJobId },
     data: {
@@ -628,7 +641,9 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     { id: videoJobId },
     { versionName: track.versionName, id: track.id },
     { title: project.title, id: project.id },
-    thumbExists ? thumbnailPath : undefined
+    thumbExists ? thumbnailPath : undefined,
+    previewExists ? previewPath : undefined,
+    { width: 960, height: 540 }
   )
 }
 

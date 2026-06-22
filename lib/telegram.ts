@@ -140,7 +140,9 @@ export async function sendVideoReadyCard(
   videoJob: { id: string },
   track: { versionName: string | null; id: string },
   project: { title: string; id: string },
-  thumbnailPath?: string
+  thumbnailPath?: string,
+  previewVideoPath?: string,
+  previewDims?: { width: number; height: number }
 ): Promise<void> {
   if (!BOT_TOKEN || !CHAT_ID) return
 
@@ -154,6 +156,39 @@ export async function sendVideoReadyCard(
     ], [
       { text: "🔄 Neu rendern", callback_data: `video_rerender_${videoJob.id}` },
     ]],
+  }
+
+  // Preferred: send a PLAYABLE video with the approval buttons attached.
+  // sendVideo needs width/height (else Telegram shows it squished) and a file
+  // <50MB (Bot API limit) — the worker passes a compressed 540p preview.
+  if (previewVideoPath) {
+    try {
+      const { default: FormData } = await import("form-data")
+      const videoBuffer = await fs.readFile(previewVideoPath)
+      const form = new FormData()
+      form.append("chat_id", CHAT_ID)
+      form.append("caption", text)
+      form.append("parse_mode", "Markdown")
+      form.append("reply_markup", JSON.stringify(keyboard))
+      form.append("supports_streaming", "true")
+      if (previewDims) {
+        form.append("width", String(previewDims.width))
+        form.append("height", String(previewDims.height))
+      }
+      form.append("video", videoBuffer, { filename: "preview.mp4", contentType: "video/mp4" })
+      const formHeaders = form.getHeaders()
+      const formBuffer = form.getBuffer()
+      const videoRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`, {
+        method: "POST",
+        headers: { ...formHeaders, "Content-Length": String(formBuffer.length) },
+        body: formBuffer as unknown as BodyInit,
+      })
+      const videoJson = await videoRes.json() as { ok: boolean; description?: string }
+      if (videoJson.ok) return
+      console.error("[Telegram] sendVideo failed:", videoJson.description)
+    } catch (err) {
+      console.error("[Telegram] sendVideo error:", err)
+    }
   }
 
   if (thumbnailPath) {
