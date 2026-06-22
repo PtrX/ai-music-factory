@@ -128,6 +128,7 @@ export async function GET() {
           select: {
             id: true,
             label: true,
+            name: true,
             status: true,
             scoreTotal: true,
             scoreHook:  true,
@@ -151,34 +152,28 @@ export async function GET() {
       },
     })
 
-    // Aggregate each project's most-advanced video state for the overview cell.
+    // Per-VARIANT (= version A/B/C/D) most-advanced video state for the overview.
     const ACTIVE = ["queued", "rendering", "uploading", "approved"]
-    const shaped = projects.map((p) => {
-      const tracks = p.variants.flatMap((v) => v.tracks)
-      const vjOf = (t: (typeof tracks)[number]) => t.videoJobs[0]
+    type Trk = (typeof projects)[number]["variants"][number]["tracks"][number]
+    const videoOf = (tracks: Trk[]) => {
+      const vjOf = (t: Trk) => t.videoJobs[0]
       const live = tracks.find((t) => vjOf(t)?.status === "done" && vjOf(t)?.youtubeUrl)
       const ready = tracks.find((t) => vjOf(t)?.status === "ready")
       const rendering = tracks.find((t) => ACTIVE.includes(vjOf(t)?.status ?? ""))
       const creatable = tracks.find(
         (t) => !vjOf(t) && t.structureJson && ((t.aiScoreTotal ?? 0) >= 6 || (t.scoreTotal ?? 0) >= 6)
       )
+      if (live) return { state: "live" as const, youtubeUrl: vjOf(live)!.youtubeUrl!, youtubeVideoId: vjOf(live)!.youtubeVideoId }
+      if (ready) return { state: "ready" as const, videoJobId: vjOf(ready)!.id }
+      if (rendering) return { state: "rendering" as const }
+      if (creatable) return { state: "creatable" as const, trackId: creatable.id }
+      return { state: "none" as const }
+    }
 
-      let video:
-        | { state: "live"; youtubeUrl: string; youtubeVideoId: string | null }
-        | { state: "ready"; videoJobId: string }
-        | { state: "rendering" }
-        | { state: "creatable"; trackId: string }
-        | { state: "none" }
-      if (live) video = { state: "live", youtubeUrl: vjOf(live)!.youtubeUrl!, youtubeVideoId: vjOf(live)!.youtubeVideoId }
-      else if (ready) video = { state: "ready", videoJobId: vjOf(ready)!.id }
-      else if (rendering) video = { state: "rendering" }
-      else if (creatable) video = { state: "creatable", trackId: creatable.id }
-      else video = { state: "none" }
-
-      // Strip the heavy/internal track data from the client payload.
-      const variants = p.variants.map(({ tracks: _t, ...v }) => v)
-      return { ...p, variants, video }
-    })
+    const shaped = projects.map((p) => ({
+      ...p,
+      variants: p.variants.map(({ tracks, ...v }) => ({ ...v, video: videoOf(tracks) })),
+    }))
 
     return NextResponse.json({ projects: shaped })
   } catch (error) {

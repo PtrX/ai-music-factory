@@ -2,17 +2,15 @@
 
 import { useEffect, useState, type MouseEvent } from "react"
 import Link from "next/link"
-import { ScorePill } from "@/components/ui/score-pill"
 import { projectGradient } from "@/lib/project-color"
 
-interface VariantSummary {
-  id: string
-  label: string
-  status: string
-  scoreTotal: number | null
-  scoreHook:  number | null
-  scoreVocal: number | null
-  scoreBeat:  number | null
+const STATUS_LABEL: Record<string, string> = {
+  completed: "fertig",
+  generating: "generiert…",
+  analyzing: "analysiert…",
+  prompt_ready: "bereit",
+  pending: "wartet",
+  failed: "Fehler",
 }
 
 interface VideoSummary {
@@ -23,6 +21,18 @@ interface VideoSummary {
   trackId?: string
 }
 
+interface VariantSummary {
+  id: string
+  label: string
+  name: string
+  status: string
+  scoreTotal: number | null
+  scoreHook:  number | null
+  scoreVocal: number | null
+  scoreBeat:  number | null
+  video?: VideoSummary
+}
+
 interface Project {
   id: string
   slug: string
@@ -31,7 +41,6 @@ interface Project {
   createdAt: string
   status: string
   variants: VariantSummary[]
-  video?: VideoSummary
 }
 
 function bestVariant(variants: VariantSummary[]): VariantSummary | null {
@@ -190,60 +199,73 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  {/* Score pills */}
-                  {best && (
-                    <div className="flex flex-wrap gap-1">
-                      <ScorePill label="HOOK"  value={best.scoreHook} />
-                      <ScorePill label="VOCAL" value={best.scoreVocal} />
-                      <ScorePill label="BEAT"  value={best.scoreBeat} />
+                  {/* Per-version rows: label · score · status · video action */}
+                  {p.variants.length > 0 && (
+                    <div
+                      className="mt-2 pt-2 space-y-1.5"
+                      style={{ borderTop: "1px solid var(--border-hex)" }}
+                      onClick={stop}
+                    >
+                      {p.variants.map((v) => {
+                        const vid = v.video
+                        return (
+                          <div key={v.id} className="flex items-center gap-2">
+                            <span className="w-3 flex-shrink-0 text-[10px] font-bold" style={{ color: "var(--text-primary)" }}>
+                              {v.label}
+                            </span>
+                            {v.scoreTotal != null ? (
+                              <span
+                                className="text-[10px] font-bold rounded-full flex-shrink-0"
+                                style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)", padding: "1px 7px" }}
+                              >
+                                {v.scoreTotal}
+                              </span>
+                            ) : (
+                              <span className="w-6 flex-shrink-0 text-[9px]" style={{ color: "var(--text-muted)" }}>–</span>
+                            )}
+                            <span className="flex-1 truncate text-[9px]" style={{ color: "var(--text-muted)" }}>
+                              {STATUS_LABEL[v.status] ?? v.status}
+                            </span>
+                            {vid?.state === "live" && (
+                              <button
+                                onClick={(e) => { stop(e); window.open(vid.youtubeUrl!, "_blank", "noopener") }}
+                                className="flex-shrink-0 text-[10px] font-bold rounded-full px-2.5 py-0.5"
+                                style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
+                              >
+                                ▶ YouTube
+                              </button>
+                            )}
+                            {vid?.state === "ready" && vid.videoJobId && (
+                              <button
+                                disabled={videoBusy === vid.videoJobId}
+                                onClick={(e) => approveVideo(e, vid.videoJobId!)}
+                                className="flex-shrink-0 text-[10px] font-bold rounded-full px-2.5 py-0.5 disabled:opacity-50"
+                                style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
+                              >
+                                {videoBusy === vid.videoJobId ? "…" : "✓ Freigeben"}
+                              </button>
+                            )}
+                            {vid?.state === "rendering" && (
+                              <span className="flex-shrink-0 text-[10px]" style={{ color: "var(--text-nav)" }}>Rendert…</span>
+                            )}
+                            {vid?.state === "creatable" && vid.trackId && (
+                              <button
+                                disabled={videoBusy === vid.trackId}
+                                onClick={(e) => createVideo(e, vid.trackId!)}
+                                className="flex-shrink-0 text-[10px] font-bold rounded-full px-2.5 py-0.5 disabled:opacity-50"
+                                style={{ background: "var(--surface-raised)", border: "1px solid var(--border-hex)", color: "var(--text-nav)" }}
+                              >
+                                {videoBusy === vid.trackId ? "…" : "🎬 Erstellen"}
+                              </button>
+                            )}
+                            {(!vid || vid.state === "none") && (
+                              <span className="flex-shrink-0 text-[10px]" style={{ color: "var(--text-muted)" }}>—</span>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
-
-                  {/* Video cell — create / approve / YouTube depending on state */}
-                  <div
-                    className="mt-2 pt-2 flex items-center gap-2"
-                    style={{ borderTop: "1px solid var(--border-hex)" }}
-                    onClick={stop}
-                  >
-                    <span className="text-[9px] font-bold tracking-[0.5px]" style={{ color: "var(--text-muted)" }}>
-                      VIDEO
-                    </span>
-                    {p.video?.state === "live" && (
-                      <button
-                        onClick={(e) => { stop(e); window.open(p.video!.youtubeUrl!, "_blank", "noopener") }}
-                        className="text-[10px] font-bold rounded-full px-2.5 py-1"
-                        style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
-                      >
-                        ▶ YouTube
-                      </button>
-                    )}
-                    {p.video?.state === "ready" && p.video.videoJobId && (
-                      <button
-                        disabled={videoBusy === p.video.videoJobId}
-                        onClick={(e) => approveVideo(e, p.video!.videoJobId!)}
-                        className="text-[10px] font-bold rounded-full px-2.5 py-1 disabled:opacity-50"
-                        style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
-                      >
-                        {videoBusy === p.video.videoJobId ? "…" : "✓ Freigeben + Hochladen"}
-                      </button>
-                    )}
-                    {p.video?.state === "rendering" && (
-                      <span className="text-[10px]" style={{ color: "var(--text-nav)" }}>Rendert…</span>
-                    )}
-                    {p.video?.state === "creatable" && p.video.trackId && (
-                      <button
-                        disabled={videoBusy === p.video.trackId}
-                        onClick={(e) => createVideo(e, p.video!.trackId!)}
-                        className="text-[10px] font-bold rounded-full px-2.5 py-1 disabled:opacity-50"
-                        style={{ background: "var(--surface-raised)", border: "1px solid var(--border-hex)", color: "var(--text-nav)" }}
-                      >
-                        {videoBusy === p.video.trackId ? "…" : "🎬 Video erstellen"}
-                      </button>
-                    )}
-                    {(!p.video || p.video.state === "none") && (
-                      <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>—</span>
-                    )}
-                  </div>
                 </div>
               </Link>
             )
