@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "dev:worker": "node_modules/.bin/tsx --env-file=.env.local worker/index.ts",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:worker\"",
+    "dev:telegram": "node_modules/.bin/tsx --env-file=.env.local scripts/telegram-poller.ts",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:worker\" \"npm run dev:telegram\"",
     "build": "next build",
     "start": "next start",
     "db:migrate": "prisma migrate dev",
