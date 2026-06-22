@@ -15,7 +15,7 @@
 - [ ] **Lückenlose Timeline**: Clips kacheln von `introOffset` bis zur **echten Audio-Dauer** ohne Lücken. Jeder Schnitt = Clip-Grenze → Concat landet auf dem Beat. (`buildDirectives`)
 - [ ] **Frame-Snap**: alle Schnittzeiten auf 1/30 s gerundet (kein Sub-Frame-Jitter, keine Akkumulation).
 - [ ] **Akzent-Schnitte**: erzwungener Szenenwechsel **exakt** auf herausragenden Drum-Hits. Akzent = lokaler Onset-Peak (`beatStrength` ≥ 0,45 **und** ≥ 2× lokaler Schnitt). Schnitt sitzt auf dem Hit, nicht 1 s später.
-- [ ] **Downbeat-Ausrichtung**: Grid-Schnitte auf die „1" des Takts (Phase aus `beatStrength`, argmax über `i % 4`). Global indexiert, damit über Section-Grenzen konsistent.
+- [ ] **Downbeat-Ausrichtung**: Grid-Schnitte auf die „1" des Takts (Phase aus `beatStrength`, argmax über `i % 4`). Global indexiert, damit über Section-Grenzen konsistent. **Tiebreak bei mehrdeutiger Phase** (Top-2 innerhalb 15 %): die Phase mit den meisten **Akzenten** wählen (echte Hits sind zuverlässiger als gemittelte Energie). **Manueller Override** via `structure.downbeatPhase` (0–3) für Tracks, wo Auto versagt (z. B. b2=0).
 - [ ] **Ruhige Sections halten lange** (low groupSize = 8): kein Geflacker, wo keine Percussion ist. Dichte steigt mit Energie (low 8 / medium 4 / high 2 / peak 1).
 - [ ] **Intro-Offset**: B-Roll startet bei Song-Zeit = Intro-Dauer (per ffprobe des Intros), damit Sync nach dem vorangestellten Intro erhalten bleibt.
 
@@ -24,6 +24,7 @@
 - [ ] **Portrait-Clips ausschließen** an der Quelle: Pexels `orientation=landscape` + nur `width > height`.
 - [ ] **Output**: 1920×1080, 30 fps, yuv420p, H.264, AAC 320k. (→ **1080p**, siehe Verbot 4K.)
 - [ ] **HyperFrames-Intro ist Pflicht** (Spec Phase 3), kein optionales Extra. Intro-Format muss exakt 1920×1080 / 30 fps / yuv420p sein, damit der `-c copy`-Concat sauber ist.
+- [ ] **Intro-Hintergrund pro Track variieren** — kein identisches Intro für alle Versionen eines Projekts. `introBackgroundQuery(visualTrack, seed)` mit `seed` = djb2-Hash der track.id wählt ein themenpassendes, aber pro Track anderes Establishing-Motiv. (djb2, nicht Zeichensumme — sonst kollidieren z. B. a2/b1.)
 
 ### Daten / Analyse
 - [ ] **`beatStrength` muss in der DNA** sein (`analyze_audio.py` → `beatTimes` + `beatStrength`). Ohne `beatStrength`: keine Akzent-/Downbeat-Erkennung → Fallback auf reines Grid. → Tracks müssen (neu) analysiert werden.
@@ -38,6 +39,7 @@
 ### Workflow
 - [ ] Status-Flow: `queued → rendering → ready → (Freigabe) → uploading → done`.
 - [ ] **YouTube-Upload nur nach expliziter Freigabe** (Telegram-Button / UI).
+- [ ] **Freigabe-Karte = abspielbares Video mit Buttons**: Worker rendert eine 540p-Preview (<50 MB) und sendet sie via `sendVideo` + `reply_markup` + `width/height` über den AI-Music-Factory-Bot (`sendVideoReadyCard`). Kein Standbild mehr. Fallback: Thumbnail/Text.
 
 ---
 
@@ -90,12 +92,19 @@ Review immer **lokal** öffnen (`open "$F"`), nicht über Telegram beurteilen.
 
 ---
 
+## ✅ Erledigt
+
+- [x] a1/a2/b1/b2: `beatStrength` in DNA, beatgenau gerendert, abgenommen (b2 mit Phase-Override 0; Intro genre-bedingt lose).
+- [x] Abspielbare Freigabe-Karte mit Buttons (sendVideo).
+- [x] Intro-Hintergrund pro Track variiert.
+
 ## 📋 Offene Punkte
 
-- [ ] Andere Tracks (a2/b1/b2 …) neu analysieren → `beatStrength` in DNA, dann Videos rendern.
 - [ ] `detectImpactBeats` (toter Code) entfernen.
+- [ ] Weitere Tracks (8 mit cuid-IDs aus anderem Projekt) nach gleichem Vorgehen, falls gewünscht.
 - [ ] Optional: Clip-Pool vergrößern / Pixabay als 2. Quelle gegen Wiederholungen.
+- [ ] HDR nur mit echter HDR-Clip-Quelle möglich (SDR-Stock → kein echtes HDR); 4K daran geknüpft → vorerst 1080p.
 
 ---
 
-_Stand: 2026-06-21. Bei neuen Erkenntnissen direkt hier ergänzen._
+_Stand: 2026-06-22. Bei neuen Erkenntnissen direkt hier ergänzen._
