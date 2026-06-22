@@ -11,7 +11,7 @@ import { writeFile } from "@/lib/storage"
 import { analyzeTrackWithAI } from "@/lib/ai-rating"
 import { analyzeAudioLocally } from "@/lib/librosa-analysis"
 import { extractLyricsFromAudio, extractLyricsWithTimestamps, extractLyricsGeminiFallback, WhisperSegment } from "@/lib/lyrics-extractor"
-import { buildDirectives, generateArtistIdentity } from "@/lib/visual-director"
+import { buildDirectives, generateArtistIdentity, introBackgroundQuery } from "@/lib/visual-director"
 import { fetchAndCacheSunoCredits } from "@/lib/system-status"
 import { buildClipPool, findClipForDirective } from "@/lib/clip-library"
 import { assembleVideo, assembleFullVideo } from "@/lib/video-assembler"
@@ -710,12 +710,15 @@ async function handleIntroRenderJob(job: { id: string; payload: string; variantI
   const introSection = structure.sections?.find((s: { type: string }) => s.type === "intro")
   const introDurationSec = introSection ? Math.min(introSection.endSec - introSection.startSec, 8) : 5
 
+  // Vary the intro background per track so each version of a project gets a
+  // different (but on-theme) establishing clip instead of the same one.
+  const introSeed = [...track.id].reduce((h, c) => (h * 33 + c.charCodeAt(0)) >>> 0, 5381)
   const bgDirective: import("@/lib/visual-director").VisualDirective = {
     startSec: 0, endSec: introDurationSec, type: "intro", energy: "low",
     clipDurationSec: introDurationSec, cutFrequency: 0,
     effect: "cut", visualStyle: "atmospheric",
     colorIntensity: 0.6,
-    searchQuery: `${project.genre} ${project.mood} cinematic atmospheric`,
+    searchQuery: introBackgroundQuery(identity.visualTrack, introSeed),
   }
   const bgClip = await findClipForDirective(bgDirective, project.id)
   if (!bgClip) throw new Error("Could not find background clip for intro")

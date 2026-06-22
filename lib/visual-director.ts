@@ -96,6 +96,15 @@ const energyWord: Record<string, string> = {
   low: "peaceful calm",
 }
 
+// A fitting, beautiful establishing-shot query for a track's intro background.
+// `seed` (e.g. a hash of the track id) varies the chosen subject so every
+// version of a project gets a different — but on-theme — intro clip.
+export function introBackgroundQuery(visualTrack: string, seed: number): string {
+  const subjects = SUBJECTS[visualTrack] ?? SUBJECTS["nature-epic"]
+  const subject = subjects[Math.abs(seed) % subjects.length]
+  return `${subject} cinematic establishing slow`
+}
+
 // Detect "impact beats" — beats that follow silence or a major energy jump.
 // These get burst-cut treatment (1 image per beat) for dramatic effect.
 function detectImpactBeats(
