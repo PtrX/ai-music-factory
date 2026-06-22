@@ -110,6 +110,14 @@ Review immer **lokal** öffnen (`open "$F"`), nicht über Telegram beurteilen.
 Stil darf im Fließtext natürlich vorkommen. Beschreibungen sind per API später editierbar.
 - [ ] **DNA-Bereiche als Kapitelmarken** (`0:00 …`): Blocker — `structure.sections` haben kein `type` → erst Labels herstellen (Analyse `type` setzen oder aus `energy`/Position ableiten).
 
+## 🗣️ Lyrics / Untertitel / Captions (oft erwähnt, NICHT umgesetzt)
+
+Status heute (2026-06-22):
+- ❌ **Kein YouTube-Caption-Upload** — `uploadToYouTube` sendet nur Video + Snippet, kein `captions.insert`. Für umschaltbare CC: nach dem Video-Upload SRT via `youtube.captions.insert` (scope `youtube.force-ssl`) hochladen.
+- ❌ **Suno-Tracks haben kein SRT** (kein `srtPath`) — nur Lyrics ohne Timestamps. SRT entsteht aktuell nur bei **importierten** Tracks via Whisper (`extractLyricsWithTimestamps` → `buildSrt`). Für generierte Tracks: Whisper auf das Suno-Audio laufen lassen (oder Lyrics gegen Audio alignen) → SRT erzeugen.
+- ✅ **Eingebranntes SRT** funktioniert nur, wenn `srtPath` gesetzt ist (`assembleFullVideo` re-encodet dann mit `subtitles=`-Filter; sonst Stream-Copy).
+- [ ] **TODO Folge-Videos:** (1) SRT für generierte Tracks erzeugen, (2) als YouTube-Caption-Track hochladen (`captions.insert`), (3) optional Lyrics/Timestamps in Beschreibung/Chapters. ⚠️ Scope-Erweiterung nötig: aktueller YouTube-Token hat nur `youtube.upload`, `captions.insert` braucht `youtube.force-ssl` → Token neu autorisieren.
+
 ## 📋 Offene Punkte
 
 - [ ] `detectImpactBeats` (toter Code) entfernen.
