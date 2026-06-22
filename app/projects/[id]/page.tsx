@@ -1196,7 +1196,7 @@ export default function ProjectDetail() {
                                           Rendert... (~5 Min)
                                         </div>
                                       ) : null}
-                                      {vj?.status === "done" && vj?.outputPath ? (
+                                      {vj?.status === "ready" && vj?.outputPath ? (
                                         <div className="space-y-2">
                                           <video
                                             controls
