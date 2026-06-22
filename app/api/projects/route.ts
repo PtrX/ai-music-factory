@@ -133,12 +133,54 @@ export async function GET() {
             scoreHook:  true,
             scoreVocal: true,
             scoreBeat:  true,
+            tracks: {
+              select: {
+                id: true,
+                aiScoreTotal: true,
+                scoreTotal: true,
+                structureJson: true,
+                videoJobs: {
+                  orderBy: { createdAt: "desc" },
+                  take: 1,
+                  select: { id: true, status: true, youtubeUrl: true, youtubeVideoId: true },
+                },
+              },
+            },
           },
         },
       },
     })
 
-    return NextResponse.json({ projects })
+    // Aggregate each project's most-advanced video state for the overview cell.
+    const ACTIVE = ["queued", "rendering", "uploading", "approved"]
+    const shaped = projects.map((p) => {
+      const tracks = p.variants.flatMap((v) => v.tracks)
+      const vjOf = (t: (typeof tracks)[number]) => t.videoJobs[0]
+      const live = tracks.find((t) => vjOf(t)?.status === "done" && vjOf(t)?.youtubeUrl)
+      const ready = tracks.find((t) => vjOf(t)?.status === "ready")
+      const rendering = tracks.find((t) => ACTIVE.includes(vjOf(t)?.status ?? ""))
+      const creatable = tracks.find(
+        (t) => !vjOf(t) && t.structureJson && ((t.aiScoreTotal ?? 0) >= 6 || (t.scoreTotal ?? 0) >= 6)
+      )
+
+      let video:
+        | { state: "live"; youtubeUrl: string; youtubeVideoId: string | null }
+        | { state: "ready"; videoJobId: string }
+        | { state: "rendering" }
+        | { state: "creatable"; trackId: string }
+        | { state: "none" }
+      if (live) video = { state: "live", youtubeUrl: vjOf(live)!.youtubeUrl!, youtubeVideoId: vjOf(live)!.youtubeVideoId }
+      else if (ready) video = { state: "ready", videoJobId: vjOf(ready)!.id }
+      else if (rendering) video = { state: "rendering" }
+      else if (creatable) video = { state: "creatable", trackId: creatable.id }
+      else video = { state: "none" }
+
+      // Strip the heavy/internal track data from the client payload.
+      const variants = p.variants.map(({ tracks: _t, ...v }) => v)
+      return { ...p, variants, video }
+    })
+
+    return NextResponse.json({ projects: shaped })
   } catch (error) {
     console.error("List projects error:", error)
     return NextResponse.json(

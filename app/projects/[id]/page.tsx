@@ -1232,17 +1232,26 @@ export default function ProjectDetail() {
                                         </div>
                                       ) : null}
                                       {vj?.status === "done" && vj?.youtubeUrl ? (
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs text-green-600">Live auf YouTube</span>
-                                          <a
-                                            href={vj.youtubeUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                          >
-                                            <Button variant="outline" size="sm" className="text-xs">
-                                              <ExternalLink className="h-3 w-3 mr-1" /> Ansehen
-                                            </Button>
-                                          </a>
+                                        <div className="space-y-2">
+                                          {vj.youtubeVideoId ? (
+                                            <div className="relative w-full overflow-hidden rounded border" style={{ aspectRatio: "16 / 9" }}>
+                                              <iframe
+                                                className="absolute inset-0 h-full w-full"
+                                                src={`https://www.youtube.com/embed/${vj.youtubeVideoId}`}
+                                                title="YouTube"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                                allowFullScreen
+                                              />
+                                            </div>
+                                          ) : null}
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-xs text-green-600">Live auf YouTube</span>
+                                            <a href={vj.youtubeUrl} target="_blank" rel="noopener noreferrer">
+                                              <Button variant="outline" size="sm" className="text-xs">
+                                                <ExternalLink className="h-3 w-3 mr-1" /> Auf YouTube öffnen
+                                              </Button>
+                                            </a>
+                                          </div>
                                         </div>
                                       ) : null}
                                       {vj && ["failed", "rejected"].includes(vj.status) ? (

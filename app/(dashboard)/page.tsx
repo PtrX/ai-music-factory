@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type MouseEvent } from "react"
 import Link from "next/link"
 import { ScorePill } from "@/components/ui/score-pill"
 import { projectGradient } from "@/lib/project-color"
@@ -15,6 +15,14 @@ interface VariantSummary {
   scoreBeat:  number | null
 }
 
+interface VideoSummary {
+  state: "live" | "ready" | "rendering" | "creatable" | "none"
+  youtubeUrl?: string
+  youtubeVideoId?: string | null
+  videoJobId?: string
+  trackId?: string
+}
+
 interface Project {
   id: string
   slug: string
@@ -23,6 +31,7 @@ interface Project {
   createdAt: string
   status: string
   variants: VariantSummary[]
+  video?: VideoSummary
 }
 
 function bestVariant(variants: VariantSummary[]): VariantSummary | null {
@@ -46,6 +55,20 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [videoBusy, setVideoBusy] = useState<string | null>(null)
+
+  // Inline video actions from the overview — stop the card's link navigation.
+  const stop = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation() }
+  const approveVideo = async (e: MouseEvent, videoJobId: string) => {
+    stop(e); setVideoBusy(videoJobId)
+    try { await fetch(`/api/video-jobs/${videoJobId}/approve`, { method: "POST" }) }
+    finally { setVideoBusy(null); fetchProjects() }
+  }
+  const createVideo = async (e: MouseEvent, trackId: string) => {
+    stop(e); setVideoBusy(trackId)
+    try { await fetch(`/api/tracks/${trackId}/render-video`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }) }
+    finally { setVideoBusy(null); fetchProjects() }
+  }
 
   const fetchProjects = () => {
     setLoading(true)
@@ -175,6 +198,52 @@ export default function Dashboard() {
                       <ScorePill label="BEAT"  value={best.scoreBeat} />
                     </div>
                   )}
+
+                  {/* Video cell — create / approve / YouTube depending on state */}
+                  <div
+                    className="mt-2 pt-2 flex items-center gap-2"
+                    style={{ borderTop: "1px solid var(--border-hex)" }}
+                    onClick={stop}
+                  >
+                    <span className="text-[9px] font-bold tracking-[0.5px]" style={{ color: "var(--text-muted)" }}>
+                      VIDEO
+                    </span>
+                    {p.video?.state === "live" && (
+                      <button
+                        onClick={(e) => { stop(e); window.open(p.video!.youtubeUrl!, "_blank", "noopener") }}
+                        className="text-[10px] font-bold rounded-full px-2.5 py-1"
+                        style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
+                      >
+                        ▶ YouTube
+                      </button>
+                    )}
+                    {p.video?.state === "ready" && p.video.videoJobId && (
+                      <button
+                        disabled={videoBusy === p.video.videoJobId}
+                        onClick={(e) => approveVideo(e, p.video!.videoJobId!)}
+                        className="text-[10px] font-bold rounded-full px-2.5 py-1 disabled:opacity-50"
+                        style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
+                      >
+                        {videoBusy === p.video.videoJobId ? "…" : "✓ Freigeben + Hochladen"}
+                      </button>
+                    )}
+                    {p.video?.state === "rendering" && (
+                      <span className="text-[10px]" style={{ color: "var(--text-nav)" }}>Rendert…</span>
+                    )}
+                    {p.video?.state === "creatable" && p.video.trackId && (
+                      <button
+                        disabled={videoBusy === p.video.trackId}
+                        onClick={(e) => createVideo(e, p.video!.trackId!)}
+                        className="text-[10px] font-bold rounded-full px-2.5 py-1 disabled:opacity-50"
+                        style={{ background: "var(--surface-raised)", border: "1px solid var(--border-hex)", color: "var(--text-nav)" }}
+                      >
+                        {videoBusy === p.video.trackId ? "…" : "🎬 Video erstellen"}
+                      </button>
+                    )}
+                    {(!p.video || p.video.state === "none") && (
+                      <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>—</span>
+                    )}
+                  </div>
                 </div>
               </Link>
             )
