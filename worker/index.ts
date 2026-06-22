@@ -656,6 +656,13 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
   })
   if (!videoJob?.outputPath) throw new Error("No rendered video found")
 
+  // Idempotency: never upload the same video twice (avoids YouTube duplicates).
+  if (videoJob.youtubeUrl) {
+    console.log(`[Worker] videoJob ${videoJobId} already on YouTube: ${videoJob.youtubeUrl} — skipping`)
+    await markDone(job.id, { skipped: true, youtubeUrl: videoJob.youtubeUrl })
+    return
+  }
+
   const track = videoJob.track
   const project = track.variant.project
   const structure = track.structureJson ? JSON.parse(track.structureJson) : null

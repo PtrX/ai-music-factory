@@ -11,6 +11,10 @@ export async function POST(
     if (!job) {
       return NextResponse.json({ error: "Not found", code: "NOT_FOUND" }, { status: 404 })
     }
+    // Already on YouTube — never re-upload (guards against stale "ready" status).
+    if (job.youtubeUrl) {
+      return NextResponse.json({ error: "Already uploaded", code: "ALREADY_UPLOADED", url: job.youtubeUrl }, { status: 409 })
+    }
     if (job.status !== "ready") {
       return NextResponse.json({ error: "Video not ready for approval", code: "VALIDATION_ERROR" }, { status: 400 })
     }
