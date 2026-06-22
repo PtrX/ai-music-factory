@@ -40,6 +40,8 @@
 - [ ] Status-Flow: `queued → rendering → ready → (Freigabe) → uploading → done`.
 - [ ] **YouTube-Upload nur nach expliziter Freigabe** (Telegram-Button / UI).
 - [ ] **Freigabe-Karte = abspielbares Video mit Buttons**: Worker rendert eine 540p-Preview (<50 MB) und sendet sie via `sendVideo` + `reply_markup` + `width/height` über den AI-Music-Factory-Bot (`sendVideoReadyCard`). Kein Standbild mehr. Fallback: Thumbnail/Text.
+- [ ] **Hochgeladen wird die 1080p-HD-Datei** (`videoJob.outputPath` = `*-final.mp4`), NICHT die 540p-Preview (die ist nur für die Telegram-Karte).
+- [ ] **Button-Callbacks brauchen den Poller**: kein öffentlicher Webhook auf localhost → `npm run dev:telegram` (`scripts/telegram-poller.ts`) long-pollt `getUpdates` und reicht Updates an die lokale Webhook-Route weiter. Braucht laufendes `next dev`. In `dev:all` enthalten.
 
 ---
 
@@ -53,6 +55,7 @@
 - [ ] **Nicht auf `structure.totalDurationSec` verlassen** — ffprobe nutzen.
 - [ ] **NICHT das Plugin-Tool (MyClaude-Bot) für Video-Review** nutzen — es sendet mp4 als *Dokument* → nur Standbild. **Stattdessen: `sendVideo` über den AI-Music-Factory-Bot** (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` aus `.env.local`), dann ist es abspielbar UND auf dem richtigen Bot. **Pflicht:** `-F width=… -F height=…` mitschicken, sonst zeigt Telegram es verzerrt/quadratisch. Bot-API-Limit: 50 MB → komprimierte 540p-Version senden. Beispiel: `curl -F chat_id=$CHAT -F video=@clip.mp4 -F width=960 -F height=540 -F supports_streaming=true .../sendVideo`
 - [ ] **YouTube-Upload ist `privacyStatus: "public"`** — nie ohne Bestätigung hochladen.
+- [ ] **YouTube-Multipart-Body**: der Video-Part-Header (Boundary + `Content-Type: video/mp4`) MUSS vor den Video-Bytes in den Body — sonst `400 Metadata part is too large` (Video wird als Metadaten gelesen). War der Bug in `59e2e9a`.
 - [ ] **Clip-Pool < Directives** ⇒ Wiederholungen. Aktuell Pool 80 vs ~150 Directives → ~70 Wdh. Bei Bedarf `targetPoolSize` hoch oder Pixabay als 2. Quelle in `buildClipPool`.
 
 ---
