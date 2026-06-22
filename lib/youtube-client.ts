@@ -137,8 +137,9 @@ export async function uploadToYouTube(opts: YouTubeUploadOpts): Promise<YouTubeU
 
   const body = Buffer.concat([
     Buffer.from(bodyParts[0]),
-    videoBuffer,
-    Buffer.from(`\r\n--${boundary}--\r\n`),
+    Buffer.from(bodyParts[1]),   // video part header + boundary — was missing,
+    videoBuffer,                 // so the video bytes were glued onto the JSON
+    Buffer.from(`\r\n--${boundary}--\r\n`),  // metadata part ("Metadata too large")
   ])
 
   const uploadRes = await fetch(
