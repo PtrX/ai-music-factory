@@ -1,0 +1,7 @@
+# Audio analysis for the render pipeline.
+# librosa: beat tracking + onset strength (scripts/analyze_audio.py) — REQUIRED.
+# openai-whisper: lyric/caption transcription — only needed for captions/SRT.
+librosa==0.10.2.post1
+numpy==1.26.4
+soundfile==0.12.1
+openai-whisper==20231117

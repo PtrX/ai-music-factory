@@ -9,6 +9,8 @@
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:worker\" \"npm run dev:telegram\"",
     "build": "next build",
     "start": "next start",
+    "start:worker": "node_modules/.bin/tsx worker/index.ts",
+    "start:telegram": "node_modules/.bin/tsx scripts/telegram-poller.ts",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",

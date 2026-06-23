@@ -1,20 +1,65 @@
-version: "3.8"
+# AI Music Factory — Proxmox/NAS deployment.
+# Postgres + web + worker + telegram-poller from one image (see Dockerfile).
+# Storage (media) lives on the NAS via the STORAGE_DIR bind mount.
+# Full setup: docs/superpowers/specs/2026-06-23-proxmox-nas-migration.md
 services:
-  app:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: amf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: amf
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amf"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
     build: .
+    restart: unless-stopped
+    command: npm run start
     ports:
       - "3000:3000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://amf:${POSTGRES_PASSWORD}@db:5432/amf
+      STORAGE_BASE_PATH: /data/storage
     volumes:
-      - ./storage:/app/storage
-      - ./dev.db:/app/dev.db
-    env_file: .env.local
+      - ${STORAGE_DIR:?set STORAGE_DIR to the NAS mount}:/data/storage
+    depends_on:
+      db:
+        condition: service_healthy
 
   worker:
     build: .
-    command: node dist/worker/index.js
+    restart: unless-stopped
+    command: npm run start:worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://amf:${POSTGRES_PASSWORD}@db:5432/amf
+      STORAGE_BASE_PATH: /data/storage
+      # internal URL so the worker can reach the web API for approve callbacks
+      NEXT_PUBLIC_APP_URL: http://web:3000
     volumes:
-      - ./storage:/app/storage
-      - ./dev.db:/app/dev.db
-    env_file: .env.local
+      - ${STORAGE_DIR:?set STORAGE_DIR to the NAS mount}:/data/storage
     depends_on:
-      - app
+      db:
+        condition: service_healthy
+
+  telegram-poller:
+    build: .
+    restart: unless-stopped
+    command: npm run start:telegram
+    env_file: .env
+    environment:
+      # forward Telegram updates to the web webhook route over the internal net
+      NEXT_PUBLIC_APP_URL: http://web:3000
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
