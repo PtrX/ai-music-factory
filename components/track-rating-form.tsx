@@ -42,12 +42,12 @@ type AiKey = "aiScoreHook" | "aiScoreVocal" | "aiScoreBeat" | "aiScoreEmotion" |
 
 export function TrackRatingForm({ trackId, aiScores, userScores, onSaved }: TrackRatingFormProps) {
   const [scores, setScores] = useState<Record<ScoreKey, number | null>>({
-    scoreHook: userScores.scoreHook,
-    scoreVocal: userScores.scoreVocal,
-    scoreBeat: userScores.scoreBeat,
-    scoreEmotion: userScores.scoreEmotion,
-    scoreRemix: userScores.scoreRemix,
-    scoreTikTok: userScores.scoreTikTok,
+    scoreHook: userScores.scoreHook ?? aiScores.aiScoreHook,
+    scoreVocal: userScores.scoreVocal ?? aiScores.aiScoreVocal,
+    scoreBeat: userScores.scoreBeat ?? aiScores.aiScoreBeat,
+    scoreEmotion: userScores.scoreEmotion ?? aiScores.aiScoreEmotion,
+    scoreRemix: userScores.scoreRemix ?? aiScores.aiScoreRemix,
+    scoreTikTok: userScores.scoreTikTok ?? aiScores.aiScoreTikTok,
   })
   const [notes, setNotes] = useState(userScores.notes || "")
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle")
@@ -84,19 +84,20 @@ export function TrackRatingForm({ trackId, aiScores, userScores, onSaved }: Trac
     scheduleSave(scores, value)
   }
 
-  // Sync when parent reloads after KI analysis
+  // Sync when parent reloads after KI analysis — fall back to AI score if no user score set
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
     setScores({
-      scoreHook: userScores.scoreHook,
-      scoreVocal: userScores.scoreVocal,
-      scoreBeat: userScores.scoreBeat,
-      scoreEmotion: userScores.scoreEmotion,
-      scoreRemix: userScores.scoreRemix,
-      scoreTikTok: userScores.scoreTikTok,
+      scoreHook: userScores.scoreHook ?? aiScores.aiScoreHook,
+      scoreVocal: userScores.scoreVocal ?? aiScores.aiScoreVocal,
+      scoreBeat: userScores.scoreBeat ?? aiScores.aiScoreBeat,
+      scoreEmotion: userScores.scoreEmotion ?? aiScores.aiScoreEmotion,
+      scoreRemix: userScores.scoreRemix ?? aiScores.aiScoreRemix,
+      scoreTikTok: userScores.scoreTikTok ?? aiScores.aiScoreTikTok,
     })
     setNotes(userScores.notes || "")
-  }, [userScores.scoreHook, userScores.scoreVocal, userScores.scoreBeat, userScores.scoreEmotion, userScores.scoreRemix, userScores.scoreTikTok, userScores.notes])
+  }, [userScores.scoreHook, userScores.scoreVocal, userScores.scoreBeat, userScores.scoreEmotion, userScores.scoreRemix, userScores.scoreTikTok, userScores.notes,
+      aiScores.aiScoreHook, aiScores.aiScoreVocal, aiScores.aiScoreBeat, aiScores.aiScoreEmotion, aiScores.aiScoreRemix, aiScores.aiScoreTikTok])
 
   const hasAiScores = Object.values(aiScores).some((v) => v !== null && v !== undefined)
 
