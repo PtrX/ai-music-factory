@@ -68,8 +68,8 @@ function bestVariant(variants: VariantSummary[]): VariantSummary | null {
 function SkeletonCard() {
   return (
     <div
-      className="rounded-lg p-3 animate-pulse"
-      style={{ background: "var(--surface-raised)", border: "1px solid var(--border-hex)", height: 72 }}
+      className="rounded-xl p-5 animate-pulse"
+      style={{ background: "var(--surface-raised)", border: "1px solid var(--border-hex)", height: 180 }}
     />
   )
 }
@@ -85,10 +85,10 @@ function compactMetric(label: string, value: string | number | null) {
   if (value == null || value === "") return null
   return (
     <span
-      className="rounded-full px-2 py-0.5 text-[9px] font-bold whitespace-nowrap"
+      className="rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap"
       style={{ background: "var(--surface-base)", border: "1px solid var(--border-hex)", color: "var(--text-nav)" }}
     >
-      {value} {label}
+      {value}{label ? ` ${label}` : ""}
     </span>
   )
 }
@@ -151,7 +151,7 @@ export default function Dashboard() {
 
       {/* Loading skeletons */}
       {loading ? (
-        <div className="flex flex-col gap-3 max-w-5xl">
+        <div className="flex flex-col gap-4 max-w-7xl">
           {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
         </div>
       ) : error ? (
@@ -185,13 +185,14 @@ export default function Dashboard() {
         </div>
       ) : (
         /* Populated grid */
-        <div className="flex flex-col gap-3 max-w-2xl">
+        <div className="flex flex-col gap-4 max-w-7xl">
           {projects.map(p => {
             const best = bestVariant(p.variants)
+            const headerCover = best?.track?.coverUrl
             return (
               <Link key={p.id} href={`/projects/${p.id}`} className="block">
                 <div
-                  className="rounded-lg p-3 transition-colors"
+                  className="rounded-xl p-5 transition-colors"
                   style={{
                     background: "var(--surface-raised)",
                     border: "1px solid var(--border-hex)",
@@ -199,32 +200,37 @@ export default function Dashboard() {
                   onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--accent-border)")}
                   onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border-hex)")}
                 >
-                  <div className="flex items-center gap-3 mb-3">
-                    {/* Colour icon */}
-                    <div
-                      className="w-7 h-7 rounded-[5px] flex-shrink-0"
-                      style={{ background: projectGradient(p.slug) }}
-                    />
-                    <div className="flex-1 min-w-0">
+                  {/* Header */}
+                  <div className="flex items-center gap-4 mb-4">
+                    {headerCover ? (
+                      <img
+                        src={headerCover}
+                        alt=""
+                        className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
+                        loading="lazy"
+                      />
+                    ) : (
                       <div
-                        className="text-[11px] font-bold truncate"
-                        style={{ color: "var(--text-primary)" }}
-                      >
+                        className="w-14 h-14 rounded-lg flex-shrink-0"
+                        style={{ background: projectGradient(p.slug) }}
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-base font-bold truncate" style={{ color: "var(--text-primary)" }}>
                         {p.title}
                       </div>
-                      <div className="text-[9px]" style={{ color: "var(--text-muted)" }}>
-                        {p.genre} · {p.variants.length === 0 ? "keine Varianten" : `${p.variants.length} Variant${p.variants.length !== 1 ? "s" : ""}`}
+                      <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                        {p.genre} · {p.variants.length === 0 ? "keine Versionen" : `${p.variants.length} Version${p.variants.length !== 1 ? "en" : ""}`}
                       </div>
                     </div>
-                    {/* Best score */}
                     {best?.scoreTotal != null && (
                       <div
-                        className="rounded-full text-[11px] font-bold flex-shrink-0"
+                        className="rounded-full text-sm font-bold flex-shrink-0"
                         style={{
                           background: "var(--accent-bg)",
                           border: "1px solid var(--accent-border)",
                           color: "var(--accent-green)",
-                          padding: "2px 10px",
+                          padding: "4px 14px",
                         }}
                       >
                         {best.scoreTotal}
@@ -232,10 +238,10 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  {/* Per-version rows: label · best track · score · analysis metrics · video action */}
+                  {/* Per-version rows: label · cover · best track · score · metrics · video action */}
                   {p.variants.length > 0 && (
                     <div
-                      className="mt-2 pt-2 space-y-1"
+                      className="mt-1 pt-3 space-y-1"
                       style={{ borderTop: "1px solid var(--border-hex)" }}
                       onClick={stop}
                     >
@@ -245,43 +251,49 @@ export default function Dashboard() {
                         const duration = formatDuration(track?.durationSec ?? null)
                         const versionName = track?.versionName || v.name
                         return (
-                          <div key={v.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-1.5">
-                            <div className="w-5 text-[10px] font-bold" style={{ color: "var(--text-primary)" }}>
+                          <div
+                            key={v.id}
+                            className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg px-2 py-2.5"
+                            style={{ transition: "background 0.15s" }}
+                            onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-base)")}
+                            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                          >
+                            <div className="w-6 text-sm font-bold flex-shrink-0" style={{ color: "var(--text-primary)" }}>
                               {v.label}
                             </div>
                             {track?.coverUrl ? (
                               <img
                                 src={track.coverUrl}
                                 alt=""
-                                className="h-9 w-9 rounded object-cover flex-shrink-0"
+                                className="h-16 w-16 rounded-lg object-cover flex-shrink-0"
                                 loading="lazy"
                               />
                             ) : (
                               <div
-                                className="h-9 w-9 rounded flex-shrink-0"
-                                style={{ background: projectGradient(p.slug), opacity: 0.55 }}
+                                className="h-16 w-16 rounded-lg flex-shrink-0"
+                                style={{ background: projectGradient(p.slug), opacity: 0.45 }}
                               />
                             )}
-                            <div className="min-w-[180px] flex-1">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="truncate text-[10px] font-bold" style={{ color: "var(--text-primary)" }}>
+                            <div className="min-w-[200px] flex-1">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="truncate text-sm font-bold" style={{ color: "var(--text-primary)" }}>
                                   {track ? versionName : "Noch kein Track"}
                                 </span>
                                 {track && (
-                                  <span className="text-[9px] whitespace-nowrap" style={{ color: "var(--text-muted)" }}>
+                                  <span className="text-xs whitespace-nowrap" style={{ color: "var(--text-muted)" }}>
                                     Track {track.trackIndex + 1}/{v.trackCount}
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[9px] truncate" style={{ color: "var(--text-muted)" }}>
+                              <div className="text-xs truncate mt-0.5" style={{ color: "var(--text-muted)" }}>
                                 {STATUS_LABEL[v.status] ?? v.status}
                               </div>
                             </div>
-                            <div className="flex min-w-[220px] items-center gap-1.5 flex-wrap justify-start">
+                            <div className="flex items-center gap-2 flex-wrap justify-start">
                               {track?.scoreTotal != null && (
                                 <span
-                                  className="text-[10px] font-bold rounded-full"
-                                  style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)", padding: "1px 7px" }}
+                                  className="text-xs font-bold rounded-full"
+                                  style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)", padding: "2px 9px" }}
                                 >
                                   KI {track.scoreTotal}
                                 </span>
@@ -293,41 +305,41 @@ export default function Dashboard() {
                               {track?.peakCount ? compactMetric("Peaks", track.peakCount) : null}
                             </div>
                             <div className="ml-auto flex justify-end">
-                            {vid?.state === "live" && (
-                              <button
-                                onClick={(e) => { stop(e); window.open(vid.youtubeUrl!, "_blank", "noopener") }}
-                                className="flex-shrink-0 text-[10px] font-bold rounded-full px-2.5 py-0.5"
-                                style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
-                              >
-                                ▶ YouTube
-                              </button>
-                            )}
-                            {vid?.state === "ready" && vid.videoJobId && (
-                              <button
-                                disabled={videoBusy === vid.videoJobId}
-                                onClick={(e) => approveVideo(e, vid.videoJobId!)}
-                                className="flex-shrink-0 text-[10px] font-bold rounded-full px-2.5 py-0.5 disabled:opacity-50"
-                                style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
-                              >
-                                {videoBusy === vid.videoJobId ? "…" : "✓ Freigeben"}
-                              </button>
-                            )}
-                            {vid?.state === "rendering" && (
-                              <span className="flex-shrink-0 text-[10px]" style={{ color: "var(--text-nav)" }}>Rendert…</span>
-                            )}
-                            {vid?.state === "creatable" && vid.trackId && (
-                              <button
-                                disabled={videoBusy === vid.trackId}
-                                onClick={(e) => createVideo(e, vid.trackId!)}
-                                className="flex-shrink-0 text-[10px] font-bold rounded-full px-2.5 py-0.5 disabled:opacity-50"
-                                style={{ background: "var(--surface-raised)", border: "1px solid var(--border-hex)", color: "var(--text-nav)" }}
-                              >
-                                {videoBusy === vid.trackId ? "…" : "🎬 Erstellen"}
-                              </button>
-                            )}
-                            {(!vid || vid.state === "none") && (
-                              <span className="flex-shrink-0 text-[10px]" style={{ color: "var(--text-muted)" }}>—</span>
-                            )}
+                              {vid?.state === "live" && (
+                                <button
+                                  onClick={(e) => { stop(e); window.open(vid.youtubeUrl!, "_blank", "noopener") }}
+                                  className="flex-shrink-0 text-xs font-bold rounded-full px-4 py-1.5"
+                                  style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
+                                >
+                                  ▶ YouTube
+                                </button>
+                              )}
+                              {vid?.state === "ready" && vid.videoJobId && (
+                                <button
+                                  disabled={videoBusy === vid.videoJobId}
+                                  onClick={(e) => approveVideo(e, vid.videoJobId!)}
+                                  className="flex-shrink-0 text-xs font-bold rounded-full px-4 py-1.5 disabled:opacity-50"
+                                  style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
+                                >
+                                  {videoBusy === vid.videoJobId ? "…" : "✓ Freigeben"}
+                                </button>
+                              )}
+                              {vid?.state === "rendering" && (
+                                <span className="flex-shrink-0 text-xs" style={{ color: "var(--text-nav)" }}>Rendert…</span>
+                              )}
+                              {vid?.state === "creatable" && vid.trackId && (
+                                <button
+                                  disabled={videoBusy === vid.trackId}
+                                  onClick={(e) => createVideo(e, vid.trackId!)}
+                                  className="flex-shrink-0 text-xs font-bold rounded-full px-4 py-1.5 disabled:opacity-50"
+                                  style={{ background: "var(--surface-base)", border: "1px solid var(--border-hex)", color: "var(--text-nav)" }}
+                                >
+                                  {videoBusy === vid.trackId ? "…" : "🎬 Erstellen"}
+                                </button>
+                              )}
+                              {(!vid || vid.state === "none") && (
+                                <span className="flex-shrink-0 text-xs" style={{ color: "var(--text-muted)" }}>—</span>
+                              )}
                             </div>
                           </div>
                         )

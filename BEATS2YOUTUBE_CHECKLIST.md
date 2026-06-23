@@ -39,6 +39,7 @@
 ### Workflow
 - [ ] Status-Flow: `queued → rendering → ready → (Freigabe) → uploading → done`.
 - [ ] **YouTube-Upload nur nach expliziter Freigabe** (Telegram-Button / UI).
+- [ ] **Titel-Konvention**: `Songtitel (Version/Remix) - PtrX`, Autor immer **PtrX**, auf 100 Zeichen geclamped. Tag „PtrX". KEIN Genre/BPM/Prompt im Titel. (`worker/index.ts` → `buildYtTitle`; auch als Memory `youtube-naming-convention`.)
 - [ ] **Freigabe-Karte = abspielbares Video mit Buttons**: Worker rendert eine 540p-Preview (<50 MB) und sendet sie via `sendVideo` + `reply_markup` + `width/height` über den AI-Music-Factory-Bot (`sendVideoReadyCard`). Kein Standbild mehr. Fallback: Thumbnail/Text.
 - [ ] **Hochgeladen wird die 1080p-HD-Datei** (`videoJob.outputPath` = `*-final.mp4`), NICHT die 540p-Preview (die ist nur für die Telegram-Karte).
 - [ ] **Button-Callbacks brauchen den Poller**: kein öffentlicher Webhook auf localhost → `npm run dev:telegram` (`scripts/telegram-poller.ts`) long-pollt `getUpdates` und reicht Updates an die lokale Webhook-Route weiter. Braucht laufendes `next dev`. In `dev:all` enthalten.
