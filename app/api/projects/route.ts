@@ -137,11 +137,13 @@ export async function GET() {
             scoreVocal: true,
             scoreBeat:  true,
             tracks: {
+              orderBy: { index: "asc" },
               select: {
                 id: true,
                 index: true,
                 versionName: true,
                 suggestedVersionName: true,
+                isFavorite: true,
                 aiScoreTotal: true,
                 scoreTotal: true,
                 structureJson: true,
@@ -182,26 +184,70 @@ export async function GET() {
       return { state: "none" as const }
     }
 
-    const shaped = projects.map((p) => ({
-      ...p,
-      variants: p.variants.map(({ tracks, ...v }) => {
-        const track = selectTrackOverview(tracks)
-        const folderName = p.folderPath.split(/[\\/]/).pop()
-        return {
-          ...v,
-          track: track
-            ? {
-              ...track,
-              coverUrl: track.coverPath && folderName
-                ? `/api/audio/${encodeURIComponent(folderName)}/${track.coverPath}`
-                : track.coverUrl,
+    const shaped = projects.map((p) => {
+      const folderName = p.folderPath.split(/[\\/]/).pop()
+      return {
+        ...p,
+        variants: p.variants.map(({ tracks, ...v }) => {
+          const bestTrack = selectTrackOverview(tracks)
+          const shapedTracks = tracks.map((t) => {
+            const vj = t.videoJobs[0]
+            const coverUrl = t.coverPath && folderName
+              ? `/api/audio/${encodeURIComponent(folderName)}/${t.coverPath}`
+              : (t.sunoSourceImageUrl || t.sunoImageUrl || null)
+            const structure = (() => {
+              if (!t.structureJson) return { bpmDetected: null, keySignature: null, durationSec: null, sectionCount: null, peakCount: null }
+              try {
+                const s = JSON.parse(t.structureJson)
+                const sections = Array.isArray(s.sections) ? s.sections : []
+                return {
+                  bpmDetected: typeof s.bpmDetected === "number" ? Math.round(s.bpmDetected) : null,
+                  keySignature: typeof s.keySignature === "string" ? s.keySignature : null,
+                  durationSec: typeof s.totalDurationSec === "number" ? Math.round(s.totalDurationSec) : null,
+                  sectionCount: sections.length || null,
+                  peakCount: sections.filter((sec: { energy?: unknown }) => sec.energy === "peak").length || null,
+                }
+              } catch { return { bpmDetected: null, keySignature: null, durationSec: null, sectionCount: null, peakCount: null } }
+            })()
+            const videoState = (() => {
+              if (!vj) {
+                const creatable = t.structureJson && ((t.aiScoreTotal ?? 0) >= 6 || (t.scoreTotal ?? 0) >= 6)
+                return creatable ? { state: "creatable" as const, trackId: t.id } : { state: "none" as const }
+              }
+              if (vj.status === "done" && vj.youtubeUrl) return { state: "live" as const, youtubeUrl: vj.youtubeUrl, youtubeVideoId: vj.youtubeVideoId }
+              if (vj.status === "ready") return { state: "ready" as const, videoJobId: vj.id, trackId: t.id }
+              if (["queued", "rendering", "uploading", "approved"].includes(vj.status)) return { state: "rendering" as const }
+              return { state: "none" as const }
+            })()
+            return {
+              id: t.id,
+              index: t.index,
+              versionName: t.versionName || t.suggestedVersionName || null,
+              isFavorite: t.isFavorite,
+              scoreTotal: t.scoreTotal ?? t.aiScoreTotal,
+              coverUrl,
+              video: videoState,
+              ...structure,
             }
-            : null,
-          trackCount: tracks.length,
-          video: videoOf(tracks, track?.id),
-        }
-      }),
-    }))
+          })
+          return {
+            ...v,
+            trackCount: tracks.length,
+            tracks: shapedTracks,
+            // Keep a "best track" summary for legacy callers / project header cover
+            track: bestTrack
+              ? {
+                ...bestTrack,
+                coverUrl: bestTrack.coverPath && folderName
+                  ? `/api/audio/${encodeURIComponent(folderName)}/${bestTrack.coverPath}`
+                  : bestTrack.coverUrl,
+              }
+              : null,
+            video: videoOf(tracks, bestTrack?.id),
+          }
+        }),
+      }
+    })
 
     return NextResponse.json({ projects: shaped })
   } catch (error) {

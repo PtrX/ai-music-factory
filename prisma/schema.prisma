@@ -96,6 +96,7 @@ model Track {
   scoreTotal     Int?
   isApproved     Boolean  @default(false)
   isRejected     Boolean  @default(false)
+  isFavorite     Boolean  @default(false)
   notes          String?
   createdAt      DateTime @default(now())
   variant        Variant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
