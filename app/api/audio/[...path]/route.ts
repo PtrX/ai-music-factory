@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic"
+
 import { NextRequest, NextResponse } from "next/server"
 import * as fs from "fs/promises"
 import * as fsSync from "fs"

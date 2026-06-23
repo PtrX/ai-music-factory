@@ -8,24 +8,31 @@ WORKDIR /app
 # System deps: ffmpeg (render), python3 + venv (librosa beat analysis, whisper
 # captions). git is occasionally needed by npx tooling.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg python3 python3-venv python3-pip git ca-certificates \
+      ffmpeg python3 python3-venv python3-pip python3-setuptools git ca-certificates \
+      build-essential gcc g++ libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Python audio deps in an isolated venv. openai-whisper pulls torch (large) —
 # only needed for captions/transcription; keep it here so the pipeline is whole.
 ENV VIRTUAL_ENV=/opt/venv
-RUN python3 -m venv $VIRTUAL_ENV
+RUN python3 -m venv --system-site-packages $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# openai-whisper (captions only) excluded: builds torch from source, not needed for core pipeline
+RUN pip install --no-cache-dir librosa==0.10.2.post1 numpy==1.26.4 soundfile==0.12.1
 
-# Node deps (include dev deps: tsx runs the worker/poller, prisma generates).
+# Node deps — install all (dev included) for build; devDeps needed by Next.js build + tsx worker.
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --include=dev
 
 # App source + build
 COPY . .
-RUN npx prisma generate && npm run build
+# Switch Prisma from SQLite (local dev) to Postgres (production)
+RUN sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
+# DATABASE_URL dummy prevents Prisma from failing during Next.js static prerender
+RUN DATABASE_URL=postgresql://x:x@localhost:5432/x npx prisma generate && \
+    DATABASE_URL=postgresql://x:x@localhost:5432/x npm run build
 
 EXPOSE 3000
 # Default = web. Compose overrides `command:` for worker / telegram-poller.
