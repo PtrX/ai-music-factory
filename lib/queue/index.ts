@@ -91,9 +91,24 @@ export async function markFailed(jobId: string, error: string) {
   }
 }
 
+// A worker restart orphans any job left in "processing". Requeue it so the work
+// resumes — but count the interruption as an attempt, so a job that repeatedly
+// kills the worker (or is endlessly interrupted) can't loop forever.
 export async function resetStaleJobs() {
-  await prisma.job.updateMany({
-    where: { status: "processing" },
-    data: { status: "pending" },
-  })
+  const stale = await prisma.job.findMany({ where: { status: "processing" } })
+  for (const job of stale) {
+    const attempts = job.attempts + 1
+    if (attempts >= MAX_ATTEMPTS) {
+      await prisma.job.update({
+        where: { id: job.id },
+        data: { status: "failed", attempts, lastError: "Interrupted too many times (worker restart)" },
+      })
+    } else {
+      await prisma.job.update({
+        where: { id: job.id },
+        data: { status: "pending", attempts, nextRetryAt: null },
+      })
+    }
+  }
+  return stale.length
 }

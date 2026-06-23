@@ -889,7 +889,47 @@ async function processJob() {
     const message = error instanceof Error ? error.message : "Unknown error"
     console.error(`[Worker] Job ${job.id} failed:`, message)
     await markFailed(job.id, message)
+    await reflectVideoJobFailure(job)
   }
+}
+
+// When a video-pipeline job fails TERMINALLY, move its VideoJob out of the
+// transient state so the UI doesn't show a forever-"rendering"/"uploading" job.
+async function reflectVideoJobFailure(job: { id: string; type: string; payload: string }) {
+  if (!["intro_render", "video_render", "youtube_upload"].includes(job.type)) return
+  const fresh = await prisma.job.findUnique({ where: { id: job.id }, select: { status: true } })
+  if (fresh?.status !== "failed") return // still retrying → leave VideoJob untouched
+  try {
+    const { videoJobId } = JSON.parse(job.payload)
+    if (videoJobId) {
+      await prisma.videoJob.updateMany({
+        where: { id: videoJobId, status: { in: ["queued", "rendering", "approved", "uploading"] } },
+        data: { status: "failed" },
+      })
+    }
+  } catch { /* payload without videoJobId — ignore */ }
+}
+
+// On startup, fail VideoJobs stuck in a transient state with no live job behind
+// them (e.g. the worker was killed and the job was cleaned/cancelled). Run AFTER
+// resetStaleJobs so genuinely-resumed jobs still count as live.
+async function reconcileVideoJobs() {
+  const transient = await prisma.videoJob.findMany({
+    where: { status: { in: ["queued", "rendering", "approved", "uploading"] } },
+    select: { id: true },
+  })
+  let fixed = 0
+  for (const vj of transient) {
+    const live = await prisma.job.findFirst({
+      where: { status: { in: ["pending", "processing"] }, payload: { contains: vj.id } },
+      select: { id: true },
+    })
+    if (!live) {
+      await prisma.videoJob.update({ where: { id: vj.id }, data: { status: "failed" } })
+      fixed++
+    }
+  }
+  if (fixed) console.log(`[Worker] reconciled ${fixed} orphaned videoJob(s) → failed`)
 }
 
 // ffmpeg runs via execSync, which blocks the event loop — so if the worker is
@@ -908,7 +948,9 @@ async function main() {
   console.log("[Worker] Starting AI Music Factory worker...")
 
   killOrphanedFfmpeg()
-  await resetStaleJobs()
+  const requeued = await resetStaleJobs()
+  if (requeued) console.log(`[Worker] requeued ${requeued} interrupted job(s)`)
+  await reconcileVideoJobs()
 
   let shuttingDown = false
 
