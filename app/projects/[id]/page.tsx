@@ -843,7 +843,7 @@ export default function ProjectDetail() {
                             {editingVersionId === v.id ? (
                               <div className="flex items-center gap-1 ml-1">
                                 <input
-                                  className="text-xs border rounded px-2 py-0.5 w-40 focus:outline-none focus:ring-1 focus:ring-ring"
+                                  className="text-sm bg-background text-foreground border border-input rounded px-2.5 py-1 w-48 focus:outline-none focus:ring-1 focus:ring-ring"
                                   value={editingVersionValue}
                                   placeholder="z.B. Afro Beat Mix"
                                   autoFocus
@@ -1090,7 +1090,7 @@ export default function ProjectDetail() {
                                       {editingTrackNameId === track.id ? (
                                         <>
                                           <input
-                                            className="text-xs border rounded px-2 py-0.5 w-44 focus:outline-none focus:ring-1 focus:ring-ring ml-1"
+                                            className="text-sm bg-background text-foreground border border-input rounded px-2.5 py-1 w-52 focus:outline-none focus:ring-1 focus:ring-ring ml-1"
                                             value={editingTrackNameValue}
                                             placeholder="z.B. Cinematic Club Mix"
                                             autoFocus
