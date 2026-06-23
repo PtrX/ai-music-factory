@@ -85,10 +85,17 @@ function buildChapters(structure: TrackStructure | null): string {
   const sections = structure?.sections ?? []
   if (sections.length < 3) return ""
   const n = sections.length
-  const raw = sections.map((s, i) => ({
-    time: i === 0 ? 0 : Math.floor(s.startSec),
-    label: sectionLabel(s.energy, i, n),
-  }))
+  const total = (structure as { totalDurationSec?: number } | null)?.totalDurationSec
+
+  // Build markers, guarding against non-finite startSec from malformed DNA.
+  const raw: { time: number; label: string }[] = []
+  for (let i = 0; i < n; i++) {
+    const s = sections[i]
+    const time = i === 0 ? 0 : Math.floor(s.startSec)
+    if (!Number.isFinite(time)) continue
+    raw.push({ time, label: sectionLabel(s.energy, i, n) })
+  }
+
   // ascending, ≥10s apart, collapse consecutive duplicate labels
   const markers: { time: number; label: string }[] = []
   for (const m of raw) {
@@ -96,21 +103,30 @@ function buildChapters(structure: TrackStructure | null): string {
     if (prev && (m.time - prev.time < 10 || m.label === prev.label)) continue
     markers.push(m)
   }
-  if (markers.length < 3 || markers[0].time !== 0) return ""
+  // The last chapter must also span ≥10s, else YouTube drops all chapters.
+  if (markers.length >= 1 && Number.isFinite(total) && (total as number) - markers[markers.length - 1].time < 10) {
+    markers.pop()
+  }
+  if (markers.length < 3) return ""
   return markers.map((m) => `${mmss(m.time)} ${m.label}`).join("\n")
 }
 
-// First (positive) sentence of the AI review; drop the critique tail.
+// First (positive) sentence of the AI review; drop the critique tail. Returns
+// "" if there is no usable positive lead (e.g. a critique-first note).
 function vibeLine(aiNotes: string | null): string {
   if (!aiNotes) return ""
-  let text = aiNotes.trim()
-  // cut at the critique pivot if present
-  const pivot = text.search(/\b(While|What holds it back|However|Though)\b/i)
-  if (pivot > 40) text = text.slice(0, pivot).trim()
-  // keep just the first sentence
-  const dot = text.indexOf(". ")
-  if (dot > 0) text = text.slice(0, dot + 1).trim()
-  return text.replace(/\s+/g, " ").trim()
+  let text = aiNotes.replace(/\s+/g, " ").trim()
+  if (!text) return ""
+  // Cut at the critique pivot wherever it appears (not just past char 40).
+  const pivot = text.search(/\b(While|However|Though|Although|What holds it back)\b/i)
+  if (pivot > 0) text = text.slice(0, pivot).replace(/[\s,;:–—-]+$/, "").trim()
+  // Keep the first sentence (terminator . ! ? or end of string).
+  const m = text.match(/^.*?[.!?](?=\s|$)/)
+  if (m) text = m[0].trim()
+  // Drop if there's no real positive lead, or it begins with a critique.
+  if (text.length < 12) return ""
+  if (/^(while|however|though|although|what holds it back|but|unfortunately)\b/i.test(text)) return ""
+  return text.length > 300 ? text.slice(0, 297).trimEnd() + "…" : text
 }
 
 export function buildYouTubeDescription(opts: {
@@ -125,7 +141,9 @@ export function buildYouTubeDescription(opts: {
   if (chapters) parts.push(chapters)
   parts.push("🎶 Produced with AI Music Factory — music, cover & video, fully AI-assisted.")
   parts.push("💬 Curious how a track like this is made end-to-end? Drop a comment — if there's interest, I'll break down the process.")
-  return parts.join("\n\n")
+  const out = parts.join("\n\n")
+  // YouTube hard-limits descriptions to 5000 chars.
+  return out.length > 4900 ? out.slice(0, 4900) : out
 }
 
 async function getValidAccessToken(): Promise<string> {

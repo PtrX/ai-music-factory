@@ -37,6 +37,34 @@ function buildSrt(segments: WhisperSegment[]): string {
     .join("\n\n")
 }
 
+// YouTube title: "Song (Version/Remix) - PtrX", clamped to the 100-char limit.
+function buildYtTitle(songTitle: string, versionName: string | null): string {
+  const version = (versionName || "Mix").trim()
+  const suffix = ` (${version}) - PtrX`
+  const MAX = 100
+  let title = `${songTitle.trim()}${suffix}`
+  if (title.length > MAX) {
+    const room = Math.max(1, MAX - suffix.length)
+    title = `${songTitle.trim().slice(0, room).trim()}${suffix}`
+    if (title.length > MAX) title = title.slice(0, MAX)
+  }
+  return title
+}
+
+// Best-effort BCP-47 language tag for YouTube captions from free-text language.
+function bcp47(language: string | null): string {
+  const l = (language || "").toLowerCase().trim()
+  const map: Record<string, string> = {
+    english: "en", englisch: "en", en: "en",
+    german: "de", deutsch: "de", de: "de",
+    russian: "ru", russisch: "ru", ru: "ru",
+    spanish: "es", spanisch: "es", es: "es",
+    french: "fr", franzoesisch: "fr", französisch: "fr", fr: "fr",
+    italian: "it", italienisch: "it", it: "it",
+  }
+  return map[l] ?? (l.length === 2 ? l : "en")
+}
+
 // Auto-queues music_api once both lyricsPath and sunoPromptPath are set on the variant.
 // Called after each lyrics/prompt job so whichever finishes last triggers the music step.
 async function maybeQueueMusicJob(variantId: string) {
@@ -704,21 +732,28 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
 
   const track = videoJob.track
   const project = track.variant.project
-  const structure = track.structureJson ? JSON.parse(track.structureJson) : null
+  let structure: unknown = null
+  try {
+    structure = track.structureJson ? JSON.parse(track.structureJson) : null
+  } catch {
+    console.warn(`[Worker] bad structureJson for track ${track.id} — description without chapters`)
+  }
 
   await prisma.videoJob.update({ where: { id: videoJobId }, data: { status: "uploading" } })
 
   const description = buildYouTubeDescription({
-    structure,
+    structure: structure as never,
     aiNotes: track.aiNotes,
     genre: project.genre,
   })
 
+  const title = buildYtTitle(project.title, track.versionName)
+
   const { videoId, url } = await uploadToYouTube({
     videoPath: path.join(project.folderPath, videoJob.outputPath),
-    title: `${project.title} — ${track.versionName || "Mix"}`,
+    title,
     description,
-    tags: [project.genre, project.mood, "AI Music"],
+    tags: [project.genre, project.mood, "PtrX", "AI Music"].filter(Boolean) as string[],
   })
 
   await prisma.videoJob.update({
@@ -727,30 +762,35 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
   })
 
   // Toggleable YouTube captions: reuse an existing SRT, else transcribe the
-  // audio (Whisper). Kept separate from burn-in. Best-effort: needs the
-  // youtube.force-ssl scope (re-connect YouTube once) — logs & continues on 403.
-  try {
-    let captionSrt: string | null = track.srtPath ? path.join(project.folderPath, track.srtPath) : null
-    if (!captionSrt) {
-      const whisper = await extractLyricsWithTimestamps(path.join(project.folderPath, track.audioPath))
-      if (whisper && whisper.segments.length > 0) {
-        const captionSrtPath = `outputs/${track.id}-captions.srt`
-        captionSrt = path.join(project.folderPath, captionSrtPath)
-        await fs.mkdir(path.dirname(captionSrt), { recursive: true })
-        await fs.writeFile(captionSrt, buildSrt(whisper.segments), "utf-8")
-        await prisma.track.update({ where: { id: track.id }, data: { srtPath: captionSrtPath } })
+  // audio (Whisper). Kept separate from burn-in. Skipped for instrumentals.
+  // Best-effort: needs the youtube.force-ssl scope (re-connect YouTube once).
+  if (project.vocalType !== "instrumental") {
+    try {
+      let captionSrt: string | null = track.srtPath ? path.join(project.folderPath, track.srtPath) : null
+      let captionLang = bcp47(project.language)
+      if (!captionSrt && track.audioPath) {
+        const whisper = await extractLyricsWithTimestamps(path.join(project.folderPath, track.audioPath))
+        const srtContent = whisper && whisper.segments.length > 0 ? buildSrt(whisper.segments) : ""
+        if (srtContent.trim()) {
+          if (whisper?.language) captionLang = whisper.language
+          const captionSrtPath = `outputs/${track.id}-captions.srt`
+          captionSrt = path.join(project.folderPath, captionSrtPath)
+          await fs.mkdir(path.dirname(captionSrt), { recursive: true })
+          await fs.writeFile(captionSrt, srtContent, "utf-8")
+          await prisma.track.update({ where: { id: track.id }, data: { srtPath: captionSrtPath } })
+        }
       }
+      if (captionSrt) {
+        await uploadCaption(videoId, captionSrt, captionLang)
+        console.log(`[Worker] caption track uploaded for ${track.id} (${captionLang})`)
+      }
+    } catch (e) {
+      console.warn("[Worker] caption skipped (re-auth youtube.force-ssl or transcription failed):", (e as Error).message)
     }
-    if (captionSrt) {
-      await uploadCaption(videoId, captionSrt)
-      console.log(`[Worker] caption track uploaded for ${track.id}`)
-    }
-  } catch (e) {
-    console.warn("[Worker] caption skipped (re-auth youtube.force-ssl or transcription failed):", (e as Error).message)
   }
 
   const { sendYouTubeLiveCard } = await import("@/lib/telegram")
-  await sendYouTubeLiveCard(url, `${project.title} — ${track.versionName || "Mix"}`)
+  await sendYouTubeLiveCard(url, title)
 }
 
 async function handleIntroRenderJob(job: { id: string; payload: string; variantId: string | null }) {
