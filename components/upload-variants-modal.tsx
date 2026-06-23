@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useRef, useState } from "react"
-import { parseBlob } from "music-metadata"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -58,6 +57,7 @@ export function UploadVariantsModal({ projectId, open, onClose, onImported }: Up
         let hasId3Lyrics = false
 
         try {
+          const { parseBlob } = await import("music-metadata")
           const tags = await parseBlob(file)
           if (tags.common.title) variantName = tags.common.title
           hasId3Lyrics = Boolean(tags.common.lyrics?.length)

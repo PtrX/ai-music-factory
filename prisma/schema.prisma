@@ -64,6 +64,15 @@ model Track {
   variantId      String
   index          Int
   audioPath      String
+  sunoTaskId     String?
+  sunoAudioId    String?
+  sunoModelName  String?
+  sunoAudioUrl   String?
+  sunoSourceAudioUrl String?
+  sunoImageUrl   String?
+  sunoSourceImageUrl String?
+  sunoDurationSec Float?
+  coverPath      String?
   versionName    String?
   aiScoreHook    Int?
   aiScoreVocal   Int?

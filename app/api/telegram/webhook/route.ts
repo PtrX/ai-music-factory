@@ -300,6 +300,3 @@ async function handleGenerateCmd(projectId: string | undefined) {
       : `ℹ️ Alle Varianten von *${project.title}* sind bereits abgeschlossen.`
   )
 }
-
-// Keep legacy handler names for backward compat — unused but avoids lint errors
-export { handleStatus as _status }

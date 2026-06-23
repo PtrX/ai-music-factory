@@ -16,6 +16,14 @@ export type AudioFile = {
   filename: string
   url?: string
   buffer?: Buffer
+  providerTaskId?: string
+  providerAudioId?: string
+  providerModelName?: string
+  providerAudioUrl?: string
+  providerSourceAudioUrl?: string
+  providerImageUrl?: string
+  providerSourceImageUrl?: string
+  durationSec?: number
 }
 
 export interface MusicGenerationProvider {

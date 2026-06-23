@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { slugify, ensureProjectFolder, saveProjectJson } from "@/lib/storage"
 import { enqueue } from "@/lib/queue"
+import { selectTrackOverview } from "@/lib/tracks/overview"
 
 const LABELS = ["A", "B", "C", "D", "E"]
 const VARIANT_NAMES: Record<string, string> = {
@@ -125,6 +126,7 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
       include: {
         variants: {
+          orderBy: { label: "asc" },
           select: {
             id: true,
             label: true,
@@ -137,9 +139,16 @@ export async function GET() {
             tracks: {
               select: {
                 id: true,
+                index: true,
+                versionName: true,
+                suggestedVersionName: true,
                 aiScoreTotal: true,
                 scoreTotal: true,
                 structureJson: true,
+                coverPath: true,
+                sunoImageUrl: true,
+                sunoSourceImageUrl: true,
+                createdAt: true,
                 videoJobs: {
                   orderBy: { createdAt: "desc" },
                   take: 1,
@@ -155,12 +164,15 @@ export async function GET() {
     // Per-VARIANT (= version A/B/C/D) most-advanced video state for the overview.
     const ACTIVE = ["queued", "rendering", "uploading", "approved"]
     type Trk = (typeof projects)[number]["variants"][number]["tracks"][number]
-    const videoOf = (tracks: Trk[]) => {
+    const videoOf = (tracks: Trk[], preferredTrackId?: string | null) => {
       const vjOf = (t: Trk) => t.videoJobs[0]
       const live = tracks.find((t) => vjOf(t)?.status === "done" && vjOf(t)?.youtubeUrl)
       const ready = tracks.find((t) => vjOf(t)?.status === "ready")
       const rendering = tracks.find((t) => ACTIVE.includes(vjOf(t)?.status ?? ""))
-      const creatable = tracks.find(
+      const orderedTracks = preferredTrackId
+        ? [...tracks].sort((a, b) => (a.id === preferredTrackId ? -1 : 0) || (b.id === preferredTrackId ? 1 : 0))
+        : tracks
+      const creatable = orderedTracks.find(
         (t) => !vjOf(t) && t.structureJson && ((t.aiScoreTotal ?? 0) >= 6 || (t.scoreTotal ?? 0) >= 6)
       )
       if (live) return { state: "live" as const, youtubeUrl: vjOf(live)!.youtubeUrl!, youtubeVideoId: vjOf(live)!.youtubeVideoId }
@@ -172,7 +184,23 @@ export async function GET() {
 
     const shaped = projects.map((p) => ({
       ...p,
-      variants: p.variants.map(({ tracks, ...v }) => ({ ...v, video: videoOf(tracks) })),
+      variants: p.variants.map(({ tracks, ...v }) => {
+        const track = selectTrackOverview(tracks)
+        const folderName = p.folderPath.split(/[\\/]/).pop()
+        return {
+          ...v,
+          track: track
+            ? {
+              ...track,
+              coverUrl: track.coverPath && folderName
+                ? `/api/audio/${encodeURIComponent(folderName)}/${track.coverPath}`
+                : track.coverUrl,
+            }
+            : null,
+          trackCount: tracks.length,
+          video: videoOf(tracks, track?.id),
+        }
+      }),
     }))
 
     return NextResponse.json({ projects: shaped })

@@ -105,39 +105,6 @@ export function introBackgroundQuery(visualTrack: string, seed: number): string 
   return `${subject} cinematic establishing slow`
 }
 
-// Detect "impact beats" — beats that follow silence or a major energy jump.
-// These get burst-cut treatment (1 image per beat) for dramatic effect.
-function detectImpactBeats(
-  beatTimes: number[],
-  sections: TrackStructure["sections"]
-): Set<number> {
-  const impact = new Set<number>()
-  if (beatTimes.length < 2) return impact
-
-  const avgInterval = (beatTimes[beatTimes.length - 1] - beatTimes[0]) / (beatTimes.length - 1)
-  const silenceGap = avgInterval * 2.5  // gap > 2.5× average = silence before this beat
-
-  // Beats that follow a silence → mark them + next 2 as impact
-  for (let i = 1; i < beatTimes.length; i++) {
-    if (beatTimes[i] - beatTimes[i - 1] > silenceGap) {
-      for (let j = i; j < Math.min(i + 3, beatTimes.length); j++) impact.add(j)
-    }
-  }
-
-  // Section energy jumps: low→any, or any→peak → first 4 beats of new section are impact
-  for (let si = 1; si < sections.length; si++) {
-    const prev = sections[si - 1]
-    const curr = sections[si]
-    const isJump = (prev.energy === "low" && curr.energy !== "low") || curr.energy === "peak"
-    if (!isJump) continue
-    let count = 0
-    for (let bi = 0; bi < beatTimes.length && count < 4; bi++) {
-      if (beatTimes[bi] >= curr.startSec) { impact.add(bi); count++ }
-    }
-  }
-
-  return impact
-}
 
 export function buildDirectives(
   structure: TrackStructure,

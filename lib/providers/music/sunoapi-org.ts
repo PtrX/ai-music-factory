@@ -1,5 +1,16 @@
 import { MusicGenerationProvider, SongInput, JobStatus, AudioFile } from "./interface"
 
+type SunoApiTrack = {
+  id: string
+  title?: string
+  audioUrl?: string
+  sourceAudioUrl?: string
+  imageUrl?: string
+  sourceImageUrl?: string
+  modelName?: string
+  duration?: number
+}
+
 // Provider for sunoapi.org (managed Suno API, no self-hosting needed)
 // Docs: https://docs.sunoapi.org/
 // Set SUNOAPI_ORG_API_KEY in .env.local
@@ -81,16 +92,27 @@ export class SunoApiOrgProvider implements MusicGenerationProvider {
     }
 
     const data = await response.json()
-    const sunoData: Array<{ id: string; title?: string; audioUrl?: string }> =
-      data?.data?.response?.sunoData || []
+    const sunoData: SunoApiTrack[] = data?.data?.response?.sunoData || []
 
-    return sunoData
-      .filter((s) => s.audioUrl)
-      .map((s, i) => ({
-        filename: `${slugify(s.title || "track")}-${String(s.id).slice(0, 8)}-v${i + 1}.mp3`,
-        url: s.audioUrl,
-      }))
+    return mapSunoApiTracks(jobId, sunoData)
   }
+}
+
+export function mapSunoApiTracks(jobId: string, sunoData: SunoApiTrack[]): AudioFile[] {
+  return sunoData
+    .filter((s) => s.audioUrl)
+    .map((s, i) => ({
+      filename: `${slugify(s.title || "track")}-${String(s.id).slice(0, 8)}-v${i + 1}.mp3`,
+      url: s.audioUrl,
+      providerTaskId: jobId,
+      providerAudioId: s.id,
+      providerModelName: s.modelName,
+      providerAudioUrl: s.audioUrl,
+      providerSourceAudioUrl: s.sourceAudioUrl,
+      providerImageUrl: s.imageUrl,
+      providerSourceImageUrl: s.sourceImageUrl,
+      durationSec: s.duration,
+    }))
 }
 
 function slugify(text: string): string {

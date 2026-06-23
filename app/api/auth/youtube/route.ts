@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { google } from "googleapis"
 
+export const dynamic = "force-dynamic"
+
 export async function GET() {
   const clientId = process.env.YOUTUBE_CLIENT_ID
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET

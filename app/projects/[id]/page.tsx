@@ -96,6 +96,9 @@ interface Track {
   id: string
   index: number
   audioPath: string
+  coverPath: string | null
+  sunoImageUrl: string | null
+  sunoSourceImageUrl: string | null
   versionName: string | null
   suggestedVersionName: string | null
   structureJson: string | null
@@ -157,6 +160,7 @@ export default function ProjectDetail() {
   const [editingTrackNameId, setEditingTrackNameId] = useState<string | null>(null)
   const [editingTrackNameValue, setEditingTrackNameValue] = useState("")
   const [renderingVideoTrackIds, setRenderingVideoTrackIds] = useState<Set<string>>(new Set())
+  const [deletingTrackIds, setDeletingTrackIds] = useState<Set<string>>(new Set())
   const [regeneratingLyricsIds, setRegeneratingLyricsIds] = useState<Set<string>>(new Set())
   const [generatingMusicIds, setGeneratingMusicIds] = useState<Set<string>>(new Set())
   const [queuedMusicIds, setQueuedMusicIds] = useState<Set<string>>(new Set())
@@ -609,6 +613,28 @@ export default function ProjectDetail() {
     }
   }
 
+  const deleteTrack = async (track: Track) => {
+    if (!project) return
+    const label = track.versionName || `Track ${track.index + 1}`
+    if (!window.confirm(`${label} wirklich entfernen? Die lokale Audio-Datei und Analyse-Daten werden gelöscht.`)) return
+
+    setDeletingTrackIds(prev => new Set(prev).add(track.id))
+    setError(null)
+    try {
+      const res = await fetch(`/api/tracks/${track.id}`, { method: "DELETE" })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error || "Track konnte nicht gelöscht werden")
+        return
+      }
+      await loadProject()
+    } catch {
+      setError("Network error while deleting track")
+    } finally {
+      setDeletingTrackIds(prev => { const s = new Set(prev); s.delete(track.id); return s })
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-6">
@@ -1047,6 +1073,19 @@ export default function ProjectDetail() {
                                 <div className="flex items-start justify-between gap-2 flex-wrap">
                                   <div>
                                     <div className="flex items-center gap-1">
+                                      {(() => {
+                                        const coverUrl = track.coverPath
+                                          ? `/api/audio/${folderName}/${track.coverPath}`
+                                          : track.sunoSourceImageUrl || track.sunoImageUrl
+                                        return coverUrl ? (
+                                          <img
+                                            src={coverUrl}
+                                            alt=""
+                                            className="h-10 w-10 rounded object-cover mr-2"
+                                            loading="lazy"
+                                          />
+                                        ) : null
+                                      })()}
                                       <span className="font-medium text-sm">Track {ti + 1}</span>
                                       {editingTrackNameId === track.id ? (
                                         <>
@@ -1137,6 +1176,19 @@ export default function ProjectDetail() {
                                         SRT ↓
                                       </a>
                                     )}
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 text-xs px-2 text-destructive hover:text-destructive"
+                                      disabled={deletingTrackIds.has(track.id)}
+                                      onClick={() => deleteTrack(track)}
+                                      title="Diese erzeugte Version entfernen"
+                                    >
+                                      {deletingTrackIds.has(track.id)
+                                        ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                        : <Trash2 className="h-3 w-3 mr-1" />}
+                                      Löschen
+                                    </Button>
                                   </div>
                                 </div>
                                 <audio id={`audio-${track.id}`} controls preload="metadata" className="w-full">

@@ -30,6 +30,20 @@ interface VariantSummary {
   scoreHook:  number | null
   scoreVocal: number | null
   scoreBeat:  number | null
+  trackCount: number
+  track: {
+    id: string
+    trackIndex: number
+    versionName: string | null
+    scoreTotal: number | null
+    bpmDetected: number | null
+    keySignature: string | null
+    durationSec: number | null
+    sectionCount: number | null
+    peakCount: number | null
+    coverPath: string | null
+    coverUrl: string | null
+  } | null
   video?: VideoSummary
 }
 
@@ -57,6 +71,25 @@ function SkeletonCard() {
       className="rounded-lg p-3 animate-pulse"
       style={{ background: "var(--surface-raised)", border: "1px solid var(--border-hex)", height: 72 }}
     />
+  )
+}
+
+function formatDuration(seconds: number | null) {
+  if (!seconds || seconds <= 0) return null
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.round(seconds % 60).toString().padStart(2, "0")
+  return `${mins}:${secs}`
+}
+
+function compactMetric(label: string, value: string | number | null) {
+  if (value == null || value === "") return null
+  return (
+    <span
+      className="rounded-full px-2 py-0.5 text-[9px] font-bold whitespace-nowrap"
+      style={{ background: "var(--surface-base)", border: "1px solid var(--border-hex)", color: "var(--text-nav)" }}
+    >
+      {value} {label}
+    </span>
   )
 }
 
@@ -118,7 +151,7 @@ export default function Dashboard() {
 
       {/* Loading skeletons */}
       {loading ? (
-        <div className="flex flex-col gap-3 max-w-2xl">
+        <div className="flex flex-col gap-3 max-w-5xl">
           {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
         </div>
       ) : error ? (
@@ -166,7 +199,7 @@ export default function Dashboard() {
                   onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--accent-border)")}
                   onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border-hex)")}
                 >
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-3 mb-3">
                     {/* Colour icon */}
                     <div
                       className="w-7 h-7 rounded-[5px] flex-shrink-0"
@@ -199,33 +232,67 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  {/* Per-version rows: label · score · status · video action */}
+                  {/* Per-version rows: label · best track · score · analysis metrics · video action */}
                   {p.variants.length > 0 && (
                     <div
-                      className="mt-2 pt-2 space-y-1.5"
+                      className="mt-2 pt-2 space-y-1"
                       style={{ borderTop: "1px solid var(--border-hex)" }}
                       onClick={stop}
                     >
                       {p.variants.map((v) => {
                         const vid = v.video
+                        const track = v.track
+                        const duration = formatDuration(track?.durationSec ?? null)
+                        const versionName = track?.versionName || v.name
                         return (
-                          <div key={v.id} className="flex items-center gap-2">
-                            <span className="w-3 flex-shrink-0 text-[10px] font-bold" style={{ color: "var(--text-primary)" }}>
+                          <div key={v.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-1.5">
+                            <div className="w-5 text-[10px] font-bold" style={{ color: "var(--text-primary)" }}>
                               {v.label}
-                            </span>
-                            {v.scoreTotal != null ? (
-                              <span
-                                className="text-[10px] font-bold rounded-full flex-shrink-0"
-                                style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)", padding: "1px 7px" }}
-                              >
-                                {v.scoreTotal}
-                              </span>
+                            </div>
+                            {track?.coverUrl ? (
+                              <img
+                                src={track.coverUrl}
+                                alt=""
+                                className="h-9 w-9 rounded object-cover flex-shrink-0"
+                                loading="lazy"
+                              />
                             ) : (
-                              <span className="w-6 flex-shrink-0 text-[9px]" style={{ color: "var(--text-muted)" }}>–</span>
+                              <div
+                                className="h-9 w-9 rounded flex-shrink-0"
+                                style={{ background: projectGradient(p.slug), opacity: 0.55 }}
+                              />
                             )}
-                            <span className="flex-1 truncate text-[9px]" style={{ color: "var(--text-muted)" }}>
-                              {STATUS_LABEL[v.status] ?? v.status}
-                            </span>
+                            <div className="min-w-[180px] flex-1">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="truncate text-[10px] font-bold" style={{ color: "var(--text-primary)" }}>
+                                  {track ? versionName : "Noch kein Track"}
+                                </span>
+                                {track && (
+                                  <span className="text-[9px] whitespace-nowrap" style={{ color: "var(--text-muted)" }}>
+                                    Track {track.trackIndex + 1}/{v.trackCount}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[9px] truncate" style={{ color: "var(--text-muted)" }}>
+                                {STATUS_LABEL[v.status] ?? v.status}
+                              </div>
+                            </div>
+                            <div className="flex min-w-[220px] items-center gap-1.5 flex-wrap justify-start">
+                              {track?.scoreTotal != null && (
+                                <span
+                                  className="text-[10px] font-bold rounded-full"
+                                  style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)", padding: "1px 7px" }}
+                                >
+                                  KI {track.scoreTotal}
+                                </span>
+                              )}
+                              {compactMetric("BPM", track?.bpmDetected ?? null)}
+                              {compactMetric("", duration)}
+                              {compactMetric("", track?.keySignature ?? null)}
+                              {compactMetric("Sections", track?.sectionCount ?? null)}
+                              {track?.peakCount ? compactMetric("Peaks", track.peakCount) : null}
+                            </div>
+                            <div className="ml-auto flex justify-end">
                             {vid?.state === "live" && (
                               <button
                                 onClick={(e) => { stop(e); window.open(vid.youtubeUrl!, "_blank", "noopener") }}
@@ -261,6 +328,7 @@ export default function Dashboard() {
                             {(!vid || vid.state === "none") && (
                               <span className="flex-shrink-0 text-[10px]" style={{ color: "var(--text-muted)" }}>—</span>
                             )}
+                            </div>
                           </div>
                         )
                       })}

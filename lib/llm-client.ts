@@ -1,7 +1,6 @@
 /**
  * Unified LLM client for text generation.
- * Priority: Gemini direct (GEMINI_API_KEY) → OpenRouter (OPENROUTER_API_KEY)
- * Gemini is free-tier eligible and avoids OpenRouter credits for text tasks.
+ * Gemini direct is primary. OpenRouter is only used when GEMINI_API_KEY is not configured.
  */
 
 const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash"
@@ -54,7 +53,12 @@ async function callGeminiText(messages: Message[], maxTokens: number): Promise<s
   }
 
   const data = await res.json()
-  const parts: Array<{ text?: string }> = data?.candidates?.[0]?.content?.parts || []
+  const candidate = data?.candidates?.[0]
+  const finishReason = candidate?.finishReason
+  if (finishReason && finishReason !== "STOP") {
+    throw new Error(`Gemini text response stopped early: ${finishReason}`)
+  }
+  const parts: Array<{ text?: string }> = candidate?.content?.parts || []
   const text = parts.map(p => p.text || "").join("").trim()
   if (!text) throw new Error("Empty response from Gemini text API")
   return text
@@ -85,20 +89,21 @@ async function callOpenRouterText(messages: Message[], maxTokens: number): Promi
   }
 
   const data = await res.json()
-  const text = data?.choices?.[0]?.message?.content?.trim()
+  const choice = data?.choices?.[0]
+  const finishReason = choice?.finish_reason
+  if (finishReason && !["stop", "end_turn"].includes(finishReason)) {
+    throw new Error(`OpenRouter text response stopped early: ${finishReason}`)
+  }
+  const text = choice?.message?.content?.trim()
   if (!text) throw new Error("Empty response from OpenRouter")
   return text
 }
 
 export async function generateText(messages: Message[], maxTokens = 2048): Promise<LLMResponse> {
-  // Prefer Gemini direct — free quota, no OpenRouter credits
+  // Gemini is authoritative when configured; do not silently spend OpenRouter credits on failures.
   if (process.env.GEMINI_API_KEY) {
-    try {
-      const text = await callGeminiText(messages, maxTokens)
-      return { text, provider: "gemini" }
-    } catch (err) {
-      console.warn("[LLM] Gemini text failed, falling back to OpenRouter:", err instanceof Error ? err.message : err)
-    }
+    const text = await callGeminiText(messages, maxTokens)
+    return { text, provider: "gemini" }
   }
 
   const text = await callOpenRouterText(messages, maxTokens)

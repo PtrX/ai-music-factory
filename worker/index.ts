@@ -16,8 +16,9 @@ import { fetchAndCacheSunoCredits } from "@/lib/system-status"
 import { buildClipPool, findClipForDirective } from "@/lib/clip-library"
 import { assembleVideo, assembleFullVideo } from "@/lib/video-assembler"
 import { renderIntro } from "@/lib/intro-renderer"
-import { uploadToYouTube, buildYouTubeDescription } from "@/lib/youtube-client"
+import { uploadToYouTube, buildYouTubeDescription, uploadCaption } from "@/lib/youtube-client"
 import { sendTelegramNotification, sendTrackCard } from "@/lib/telegram"
+import { coverPathForAudioFile, pickProviderCoverUrl } from "@/lib/tracks/cover"
 
 const POLL_INTERVAL = 5000
 
@@ -192,11 +193,14 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
       lyrics: input.lyrics,
     })
     jobId = result.jobId
+    console.log(`[Worker] Submitted music job ${job.id} for variant ${variantCheck.label}: provider task ${jobId}`)
     // Persist the Suno taskId so retries poll instead of re-submit
     await prisma.job.update({
       where: { id: job.id },
       data: { payload: JSON.stringify({ ...input, sunoTaskId: jobId }) },
     })
+  } else {
+    console.log(`[Worker] Resuming music job ${job.id} for variant ${variantCheck.label}: provider task ${jobId}`)
   }
 
   await prisma.variant.update({
@@ -207,8 +211,13 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
   // Unified polling loop — sunoapi.org needs up to 15 minutes under load
   const maxAttempts = 180
   let status = { status: "pending" }
+  let lastLoggedStatus = ""
   for (let i = 0; i < maxAttempts; i++) {
     status = await provider.getStatus(jobId)
+    if (status.status !== lastLoggedStatus || i % 6 === 0) {
+      console.log(`[Worker] Music job ${job.id} provider task ${jobId}: ${status.status} (${i + 1}/${maxAttempts})`)
+      lastLoggedStatus = status.status
+    }
     if (status.status === "completed") break
     if (status.status === "failed") {
       throw new Error("Music generation failed")
@@ -221,6 +230,7 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
   }
 
   const files = await provider.downloadResult(jobId)
+  console.log(`[Worker] Music job ${job.id} provider task ${jobId}: downloading ${files.length} file(s)`)
 
   // Re-fetch to get folderPath (already validated above, but refreshed after possible updates)
   const variant = await prisma.variant.findUnique({
@@ -254,6 +264,7 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
   for (let i = 0; i < files.length; i++) {
     const file = files[i]
     const audioPath = `outputs/audio/${file.filename}`
+    let coverPath: string | null = null
 
     let buffer = file.buffer
     if (!buffer && file.url) {
@@ -270,6 +281,25 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
 
     if (buffer) {
       await writeFile(variant.project.folderPath, audioPath, buffer)
+
+      const coverUrl = pickProviderCoverUrl(file)
+      if (coverUrl) {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 60_000)
+        try {
+          const coverRes = await fetch(coverUrl, { signal: controller.signal })
+          if (coverRes.ok) {
+            coverPath = coverPathForAudioFile(file.filename, coverUrl)
+            await writeFile(variant.project.folderPath, coverPath, Buffer.from(await coverRes.arrayBuffer()))
+          } else {
+            console.warn(`[Worker] Cover download failed for ${file.filename}: ${coverRes.status}`)
+          }
+        } catch (error) {
+          console.warn(`[Worker] Cover download skipped for ${file.filename}:`, (error as Error).message)
+        } finally {
+          clearTimeout(timeout)
+        }
+      }
 
       const fullAudioPath = path.join(variant.project.folderPath, audioPath)
       const versionName = variant.versionName || variant.name
@@ -310,6 +340,15 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
           variantId: variant.id,
           index: i,
           audioPath,
+          sunoTaskId: file.providerTaskId ?? null,
+          sunoAudioId: file.providerAudioId ?? null,
+          sunoModelName: file.providerModelName ?? null,
+          sunoAudioUrl: file.providerAudioUrl ?? null,
+          sunoSourceAudioUrl: file.providerSourceAudioUrl ?? null,
+          sunoImageUrl: file.providerImageUrl ?? null,
+          sunoSourceImageUrl: file.providerSourceImageUrl ?? null,
+          sunoDurationSec: file.durationSec ?? null,
+          coverPath,
           aiScoreHook: analysis?.scores?.scoreHook ?? null,
           aiScoreVocal: analysis?.scores?.scoreVocal ?? null,
           aiScoreBeat: analysis?.scores?.scoreBeat ?? null,
@@ -667,20 +706,13 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
   const project = track.variant.project
   const structure = track.structureJson ? JSON.parse(track.structureJson) : null
 
-  let sunoStyle = ""
-  if (track.variant.sunoPromptPath) {
-    try {
-      sunoStyle = (await fs.readFile(path.join(project.folderPath, track.variant.sunoPromptPath), "utf-8")).slice(0, 200)
-    } catch {
-      // ignore
-    }
-  }
-
   await prisma.videoJob.update({ where: { id: videoJobId }, data: { status: "uploading" } })
 
-  const description = structure
-    ? buildYouTubeDescription(structure, sunoStyle)
-    : sunoStyle || "Produced with AI Music Factory"
+  const description = buildYouTubeDescription({
+    structure,
+    aiNotes: track.aiNotes,
+    genre: project.genre,
+  })
 
   const { videoId, url } = await uploadToYouTube({
     videoPath: path.join(project.folderPath, videoJob.outputPath),
@@ -693,6 +725,29 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
     where: { id: videoJobId },
     data: { status: "done", youtubeVideoId: videoId, youtubeUrl: url },
   })
+
+  // Toggleable YouTube captions: reuse an existing SRT, else transcribe the
+  // audio (Whisper). Kept separate from burn-in. Best-effort: needs the
+  // youtube.force-ssl scope (re-connect YouTube once) — logs & continues on 403.
+  try {
+    let captionSrt: string | null = track.srtPath ? path.join(project.folderPath, track.srtPath) : null
+    if (!captionSrt) {
+      const whisper = await extractLyricsWithTimestamps(path.join(project.folderPath, track.audioPath))
+      if (whisper && whisper.segments.length > 0) {
+        const captionSrtPath = `outputs/${track.id}-captions.srt`
+        captionSrt = path.join(project.folderPath, captionSrtPath)
+        await fs.mkdir(path.dirname(captionSrt), { recursive: true })
+        await fs.writeFile(captionSrt, buildSrt(whisper.segments), "utf-8")
+        await prisma.track.update({ where: { id: track.id }, data: { srtPath: captionSrtPath } })
+      }
+    }
+    if (captionSrt) {
+      await uploadCaption(videoId, captionSrt)
+      console.log(`[Worker] caption track uploaded for ${track.id}`)
+    }
+  } catch (e) {
+    console.warn("[Worker] caption skipped (re-auth youtube.force-ssl or transcription failed):", (e as Error).message)
+  }
 
   const { sendYouTubeLiveCard } = await import("@/lib/telegram")
   await sendYouTubeLiveCard(url, `${project.title} — ${track.versionName || "Mix"}`)

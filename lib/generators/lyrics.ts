@@ -20,6 +20,14 @@ Follow the song structure exactly:
 [Final Chorus]
 [Outro]
 
+Length requirements:
+- Verse sections: 6-8 lyric lines each.
+- Pre-Chorus: 3-4 lyric lines.
+- Chorus and Final Chorus: 4-6 lyric lines each.
+- Drop Hook: 3-5 short hook lines.
+- Intro and Outro: 2-4 lyric lines each.
+- Return a complete song, never a sketch or partial draft.
+
 Output only the lyrics with section markers in brackets. No explanations, no commentary.`
 
 const INSTRUMENTAL_SYSTEM_PROMPT = `You are a professional songwriter writing descriptive scene text for an instrumental track.
@@ -49,6 +57,52 @@ export interface LyricsInput {
   brief?: string | null
   instrumental?: boolean
   direction?: string | null
+}
+
+const REQUIRED_SECTIONS = [
+  "Intro",
+  "Verse 1",
+  "Pre-Chorus",
+  "Chorus",
+  "Drop Hook",
+  "Verse 2",
+  "Final Chorus",
+  "Outro",
+]
+
+export interface LyricsValidationResult {
+  valid: boolean
+  reason?: string
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+export function validateGeneratedLyrics(text: string): LyricsValidationResult {
+  const trimmed = text.trim()
+  if (!trimmed) return { valid: false, reason: "empty lyrics" }
+
+  const lines = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const incompleteMarker = lines.find(line => line.startsWith("[") && !line.endsWith("]"))
+  if (incompleteMarker || /\[[^\]\n]*$/.test(trimmed)) {
+    return { valid: false, reason: "incomplete section marker" }
+  }
+
+  const missing = REQUIRED_SECTIONS.filter(section => {
+    const pattern = new RegExp(`^\\[${escapeRegExp(section)}\\]$`, "im")
+    return !pattern.test(trimmed)
+  })
+  if (missing.length > 0) {
+    return { valid: false, reason: `missing sections: ${missing.join(", ")}` }
+  }
+
+  const lyricLineCount = lines.filter(line => !/^\[[^\]]+\]$/.test(line)).length
+  if (lyricLineCount < 16) {
+    return { valid: false, reason: `too few lyric lines: ${lyricLineCount}` }
+  }
+
+  return { valid: true }
 }
 
 function detectPoem(brief: string): boolean {
@@ -87,11 +141,26 @@ STRICT RULES — follow exactly:
       brief,
     ].join("\n")
 
-    const { text } = await generateText([
+    let messages = [
       { role: "system", content: POEM_SYSTEM },
       { role: "user", content: userPrompt },
-    ])
-    return text
+    ] as const
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const { text } = await generateText([...messages], 8192)
+      const validation = validateGeneratedLyrics(text)
+      if (validation.valid) return text
+
+      messages = [
+        messages[0],
+        {
+          role: "user",
+          content: `${userPrompt}\n\nYour previous output was invalid (${validation.reason}). Regenerate the COMPLETE lyrics now. Include every required section marker and do not stop mid-section.`,
+        },
+      ] as const
+    }
+
+    throw new Error("Generated poem lyrics failed validation after retry")
   }
 
   // Normal generation with optional brief as inspiration
@@ -118,9 +187,24 @@ STRICT RULES — follow exactly:
     .filter(Boolean)
     .join("\n")
 
-  const { text } = await generateText([
+  let messages = [
     { role: "system", content: input.instrumental ? INSTRUMENTAL_SYSTEM_PROMPT : SYSTEM_PROMPT },
     { role: "user", content: userPrompt },
-  ])
-  return text
+  ] as const
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const { text } = await generateText([...messages], 4096)
+    const validation = validateGeneratedLyrics(text)
+    if (validation.valid) return text
+
+    messages = [
+      messages[0],
+      {
+        role: "user",
+        content: `${userPrompt}\n\nYour previous output was invalid (${validation.reason}). Regenerate the COMPLETE song lyrics now. Include all required sections, meet the requested section lengths, and do not stop mid-section.`,
+      },
+    ] as const
+  }
+
+  throw new Error("Generated lyrics failed validation after retry")
 }
