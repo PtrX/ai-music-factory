@@ -420,20 +420,20 @@ export default function Dashboard() {
                                     </div>
 
                                     {/* Metrics */}
-                                    <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
                                       {t.scoreTotal != null && (
                                         <span
-                                          className="text-xs font-bold rounded-full whitespace-nowrap"
+                                          className="text-xs font-bold rounded-full flex-shrink-0 whitespace-nowrap"
                                           style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)", padding: "2px 8px" }}
                                         >
                                           KI {t.scoreTotal}
                                         </span>
                                       )}
-                                      {t.bpmDetected != null && <MetricChip value={`${t.bpmDetected} BPM`} />}
+                                      {t.bpmDetected != null && <MetricChip value={`${t.bpmDetected}`} />}
                                       {duration && <MetricChip value={duration} />}
                                       {t.keySignature && <MetricChip value={t.keySignature} />}
-                                      {t.sectionCount != null && <MetricChip value={`${t.sectionCount} Sct`} />}
-                                      {t.peakCount ? <MetricChip value={`${t.peakCount} ★`} /> : null}
+                                      {t.sectionCount != null && <MetricChip value={`${t.sectionCount}S`} />}
+                                      {t.peakCount ? <MetricChip value={`${t.peakCount}P`} /> : null}
                                     </div>
 
                                     {/* Video action */}

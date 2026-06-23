@@ -119,6 +119,7 @@ interface Track {
   scoreTotal: number | null
   notes: string | null
   srtPath: string | null
+  isFavorite: boolean
   videoJobs: VideoJob[]
 }
 
@@ -1087,6 +1088,18 @@ export default function ProjectDetail() {
                                         ) : null
                                       })()}
                                       <span className="font-medium text-sm">Track {ti + 1}</span>
+                                      <button
+                                        title={track.isFavorite ? "Favorit entfernen" : "Als besten Track markieren"}
+                                        onClick={async () => {
+                                          const next = !track.isFavorite
+                                          await fetch(`/api/tracks/${track.id}/favorite`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isFavorite: next }) })
+                                          await loadAllTracks(project!.variants)
+                                        }}
+                                        className="ml-1 text-base leading-none"
+                                        style={{ color: track.isFavorite ? "#f59e0b" : "var(--text-muted)", opacity: track.isFavorite ? 1 : 0.4 }}
+                                      >
+                                        ★
+                                      </button>
                                       {editingTrackNameId === track.id ? (
                                         <>
                                           <input
