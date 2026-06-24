@@ -1,9 +1,8 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 
-const STORAGE_ROOT = process.env.STORAGE_BASE_PATH
-  ? path.join(process.env.STORAGE_BASE_PATH, "projects")
-  : path.join(process.cwd(), "storage", "projects")
+export const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
+const STORAGE_ROOT = path.join(STORAGE_BASE, "projects")
 
 function datePrefix(): string {
   const now = new Date()

@@ -2,6 +2,7 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import { prisma } from "@/lib/db"
 import type { VisualDirective } from "./visual-director"
+import { STORAGE_BASE } from "@/lib/storage"
 
 export interface ClipResult {
   id: string
@@ -13,7 +14,7 @@ export interface ClipResult {
   source: "cache" | "pexels" | "pixabay" | "fallback"
 }
 
-const CLIPS_BASE = path.join(process.cwd(), "storage", "clips")
+const CLIPS_BASE = path.join(STORAGE_BASE, "clips")
 
 async function downloadClip(url: string, destPath: string): Promise<boolean> {
   try {

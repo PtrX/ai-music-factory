@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import * as fs from "fs/promises"
 import * as path from "path"
+import { STORAGE_BASE } from "@/lib/storage"
 
 export const dynamic = "force-dynamic"
 
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
       expiry_date: Date.now() + (data.expires_in || 3600) * 1000,
     }
 
-    const tokenPath = path.join(process.cwd(), "storage", "youtube-tokens.json")
+    const tokenPath = path.join(STORAGE_BASE, "youtube-tokens.json")
     await fs.mkdir(path.dirname(tokenPath), { recursive: true })
     await fs.writeFile(tokenPath, JSON.stringify(tokens, null, 2))
 

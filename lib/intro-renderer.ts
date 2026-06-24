@@ -19,7 +19,7 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
   await fs.mkdir(tmpDir, { recursive: true })
 
   try {
-    const templatePath = path.join(process.cwd(), "storage", "hf-template", "index.html")
+    const templatePath = path.join(process.cwd(), "templates", "hf-template", "index.html")
     let html = await fs.readFile(templatePath, "utf-8")
 
     const vars = JSON.stringify([

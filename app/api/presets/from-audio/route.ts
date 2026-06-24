@@ -5,6 +5,7 @@ import * as path from "path"
 import * as fs from "fs/promises"
 import { prisma } from "@/lib/db"
 import { analyzeAudioForPreset } from "@/lib/preset-analyzer"
+import { STORAGE_BASE } from "@/lib/storage"
 
 export const maxDuration = 120
 
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unsupported file type", code: "VALIDATION_ERROR" }, { status: 400 })
     }
 
-    const uploadDir = path.join(process.cwd(), "storage/presets/uploads")
+    const uploadDir = path.join(STORAGE_BASE, "presets", "uploads")
     await fs.mkdir(uploadDir, { recursive: true })
     const filename = `${Date.now()}-${file.name.replace(/[^a-z0-9.-]/gi, "_")}`
     const filePath = path.join(uploadDir, filename)

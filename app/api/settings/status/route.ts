@@ -3,10 +3,11 @@ export const dynamic = "force-dynamic"
 import { NextResponse } from "next/server"
 import * as fs from "fs/promises"
 import * as path from "path"
+import { STORAGE_BASE } from "@/lib/storage"
 
 export async function GET() {
   try {
-    const tokenPath = path.join(process.cwd(), "storage", "youtube-tokens.json")
+    const tokenPath = path.join(STORAGE_BASE, "youtube-tokens.json")
     let youtube = false
     try {
       await fs.access(tokenPath)

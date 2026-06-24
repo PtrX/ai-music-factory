@@ -1,6 +1,7 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 import type { TrackStructure } from "@/lib/ai-rating"
+import { STORAGE_BASE } from "@/lib/storage"
 
 interface YouTubeUploadOpts {
   videoPath: string
@@ -15,7 +16,7 @@ interface YouTubeUploadResult {
   url: string
 }
 
-const TOKEN_PATH = path.join(process.cwd(), "storage", "youtube-tokens.json")
+const TOKEN_PATH = path.join(STORAGE_BASE, "youtube-tokens.json")
 
 interface StoredTokens {
   access_token: string
