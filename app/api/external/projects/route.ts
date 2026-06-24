@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"
 
 import { NextRequest, NextResponse } from "next/server"
+import { Prisma, type Project } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { validateExternalApiKey } from "@/lib/external-auth"
 import { enqueue } from "@/lib/queue"
@@ -37,26 +38,35 @@ export async function POST(req: NextRequest) {
 
   const baseSlug = slugify(title)
   let slug = baseSlug
-  let suffix = 1
-  while (await prisma.project.findUnique({ where: { slug } })) {
-    slug = `${baseSlug}-${suffix++}`
+  let folderPath = ""
+  let project: Project | null = null
+  for (let suffix = 0; suffix < 50; suffix++) {
+    slug = suffix === 0 ? baseSlug : `${baseSlug}-${suffix}`
+    folderPath = await ensureProjectFolder(slug)
+    try {
+      project = await prisma.project.create({
+        data: {
+          slug,
+          title,
+          language: body.language || "english",
+          genre,
+          mood,
+          vibe: style,
+          bpm: parsedBpm,
+          variantCount: count,
+          folderPath,
+          source: "hermes",
+        },
+      })
+      break
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue
+      throw error
+    }
   }
-  const folderPath = await ensureProjectFolder(slug)
-
-  const project = await prisma.project.create({
-    data: {
-      slug,
-      title,
-      language: body.language || "english",
-      genre,
-      mood,
-      vibe: style,
-      bpm: parsedBpm,
-      variantCount: count,
-      folderPath,
-      source: "hermes",
-    },
-  })
+  if (!project) {
+    return NextResponse.json({ error: "Could not create a unique project slug" }, { status: 409 })
+  }
 
   const variants = await Promise.all(
     Array.from({ length: count }, (_, i) => {

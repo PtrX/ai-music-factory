@@ -113,9 +113,9 @@ export async function generateCoverPrompt(input: {
     "Generate a visual cover art prompt.",
   ].join("\n")
 
-  const { text } = await generateText([
-    { role: "system", content: COVER_SYSTEM_PROMPT },
-    { role: "user", content: userPrompt },
-  ], 512)
-  return text
-}
+	  const { text } = await generateText([
+	    { role: "system", content: COVER_SYSTEM_PROMPT },
+	    { role: "user", content: userPrompt },
+	  ], 1024)
+	  return text
+	}

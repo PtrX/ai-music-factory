@@ -1,98 +1,135 @@
 # HANDOFF — AI Music Factory
-_Stand: 2026-06-24 nachmittag_
+_Stand: 2026-06-24 abend_
 
 > Zuerst lesen: `BEATS2YOUTUBE_CHECKLIST.md`.
 
 ## Was diese Session gemacht hat
 
-### Intro-Render Debugging (Hauptarbeit)
-Vollständige Root-Cause-Analyse des `spawnSync /bin/sh ETIMEDOUT` beim Intro-Render.
+### QA-Durchlauf und Fixes
 
-**Ursachen (alle gefunden und teilweise gefixt):**
+Mehrere unabhängige QA-Scans wurden durchgeführt: Frontend Null-Safety, API-Routes, Worker/Queue, LLM-Generatoren, TypeScript/Build.
 
-1. **`gsap.min.js` fehlte im tmpDir** → `lib/intro-renderer.ts` kopierte nur `index.html` ins tmpDir, nicht die GSAP-Datei. Chrome lädt sie als relativen Pfad `./gsap.min.js` und hing. **Fix: commit `f52cc8e`** — `fs.copyFile(gsap.min.js)` nach dem writeFile.
+Gefixt:
 
-2. **Docker-Image hatte alten Stand** → Deploy via `tar xzf` + `docker compose restart worker` reicht NICHT. `tsx` lädt zwar TS-Quellcode zur Laufzeit, aber die Quellcode-Dateien liegen IM IMAGE (baked in bei `docker build`). **Fix: vollständiger Rebuild mit `docker compose build ... && docker compose up -d`.**
+- **Intro-Render Timeout**: `lib/intro-renderer.ts` Hyperframes-Timeout von `180_000` auf `480_000` erhöht.
+- **Dashboard Mini-Player**:
+  - `app/api/projects/route.ts` gibt pro Track `audioUrl` zurück.
+  - `lib/storage/index.ts` hat jetzt `projectFileUrl(...)` für sichere `/api/audio/...` URLs.
+  - `app/(dashboard)/page.tsx` nutzt ein shared `<audio>` Element; nur ein Track spielt gleichzeitig.
+  - Dashboard normalisiert `projects[].variants` und `variants[].tracks`, damit malformed API-Shapes nicht crashen.
+- **Worker/Queue-Stabilität**:
+  - `intro_render`, `video_render` und erfolgreicher `youtube_upload` markieren Jobs jetzt mit `markDone(...)`.
+  - Telegram-Karten nach erfolgreicher Musik-/Video-/YouTube-Erzeugung sind best-effort und lassen fertige Jobs nicht nachträglich fehlschlagen.
+  - `markFailed(...)` überschreibt nur noch Jobs im Status `processing`.
+  - Worker-Startup setzt bei fatalem Fehler jetzt Exit-Code 1.
+- **Cover-Prompt Generator**:
+  - `generateCoverPrompt(...)` nutzt 1024 statt 512 Tokens. Root Cause aus lokalem E2E: Gemini stoppte den Cover-Prompt dreimal mit `MAX_TOKENS`.
+- **Frontend Robustheit**:
+  - Projekt-Detailseite normalisiert `project.variants` und Track-Responses.
+  - Bulk-`generate-music` markiert nur erfolgreiche Starts als queued.
+  - Lyrics-/Prompt-Speichern zeigt API-Fehler jetzt im UI-Error-State.
+  - Preset-Liste im Projektformular wird nur als Array übernommen.
+- **API-Routes**:
+  - `PATCH /api/projects/[id]` validiert `bpm` und `variantCount` auf NaN und gibt 400 statt Prisma-500 zurück.
+  - `PATCH /api/projects/[id]` und `PATCH /api/tracks/[id]/favorite` geben bei fehlenden IDs 404 statt 500 zurück.
+  - `GET /api/variants/[id]/tracks` gibt bei unbekannter Variant 404 statt `200 { tracks: [] }`.
+  - Normale und externe Project-Create-Routes retryen Slug-Unique-Konflikte (`P2002`) mit Suffix statt Race-Condition-500.
 
-3. **CT 100 RAM = genau 8192 MB = `LOW_MEMORY_TOTAL_MB_THRESHOLD` in hyperframes** → hyperframes setzt `--force-gpu-mem-available-mb=1024` für Chrome (SwiftShader). Chrome crasht nach ~57 Frames mit `Protocol error (Page.captureScreenshot): Target closed`. **Fix: CT 100 RAM auf 10240 MB erhöht** (`pct set 100 -memory 10240` auf proxmox-prod).
+## Verifikation
 
-4. **`execSync` Timeout zu kurz (180s)** → Selbst mit 10 GB RAM dauert der Render ~300–350s (80s Calibration + 2s/Frame × 150 Frames). Der 180s-Timeout in `lib/intro-renderer.ts` reißt den Prozess ab, bevor er fertig ist. **NOCH NICHT GEFIXT.**
-
-### Aktueller Stand Intro-Render
-- CT 100 RAM: 10240 MB ✓
-- gsap.min.js im Image: ✓ (f52cc8e committed + rebuild)
-- Docker neu gebaut: ✓
-- **Blocker: `execSync` Timeout muss von 180s auf 480s erhöht werden**
-- Job-Retry-Loop gestoppt: alle pending intro_render Jobs auf failed/attempts=5 gesetzt
-
-### Disk-Management auf CT 100
-- Docker Build Cache wird groß → regelmäßig: `docker builder prune -f`
-- Beim Full-Rebuild: Container stoppen → Images löschen → neu bauen
-  ```bash
-  docker compose down
-  docker rmi amf-web amf-worker amf-telegram-poller
-  docker compose build web worker telegram-poller && docker compose up -d
-  ```
-
-## Nächste Schritte (Priorität)
-
-### 1. Intro-Render fixen (sofort)
-In `lib/intro-renderer.ts` Zeile ~51:
-```typescript
-execSync(
-  `npx hyperframes render --output "${outputPath}"`,
-  { cwd: tmpDir, timeout: 480_000, stdio: "pipe" }  // war 180_000
-)
-```
-Dann: commit → tar-deploy → rebuild → intro_render Jobs zurücksetzen:
-```sql
-UPDATE "Job" SET status='pending', attempts=0, "lastError"=NULL
-WHERE type='intro_render' AND status='failed';
-UPDATE "VideoJob" SET status='pending', "errorMessage"=NULL WHERE status='failed';
-```
-
-### 2. Mini-Player im Dashboard (war Useranfrage)
-Jeder Track-Row in `app/(dashboard)/page.tsx` soll einen Play/Pause-Button bekommen.
-- Audio-URL: `Track.audioPath` vorhanden im Schema — als `/api/audio/[...path]/route.ts` serviert
-- API muss `audioPath` zurückgeben (aktuell nicht in der Response)
-- Nur ein Player gleichzeitig (useState `playingTrackId` im Dashboard-Komponenten)
-- `<audio>`-Element per Ref, bei neuem Track stop + src wechseln + play
-
-## Systemstand
-
-- **Branch**: `main`, alle Änderungen committed und gepusht
-- **Lokal (dev)**: SQLite `prisma/dev.db`, `npm run dev` auf localhost:3000
-- **Produktion**: CT 100 (192.168.1.31), Docker Compose, Postgres, RAM: 10240 MB
-
-## Produktions-Befehle
+Ausgeführt und erfolgreich:
 
 ```bash
-# Status checken
-ssh proxmox-prod "pct exec 100 -- bash -c 'cd /opt/amf && docker compose ps'"
+npx tsx tests/storage-url.test.ts
+npm run typecheck
+for f in tests/*.test.ts; do npx tsx "$f" || exit 1; done
+npm run build
+```
 
-# Logs
-ssh proxmox-prod "pct exec 100 -- bash -c 'cd /opt/amf && docker compose logs --tail=20 worker'"
+Build lief vollständig ohne `head`; Exit-Code 0.
 
-# App neu deployen (nach Code-Änderungen)
-# 1. Lokal committen + pushen
-# 2. Code auf CT 100 aktualisieren:
+## E2E-Smoke
+
+Browser-Automation konnte nicht genutzt werden: Browser-Plugin meldete `browser-client is not trusted`.
+
+Stattdessen lokaler HTTP/API-Smoke gegen `http://localhost:3000` mit laufendem Worker:
+
+1. Dashboard `/` lädt mit 200.
+2. Preset `Russian Epic Afro Deep House` gefunden.
+3. Testprojekt erstellt: `QA Miniplayer 2026-06-24T11-41-18-535Z`, API returned 201.
+4. `/api/projects/[id]/generate` returned 200 und queuete 3 Jobs.
+5. Worker verarbeitete Lyrics + Suno-Prompt erfolgreich.
+6. Cover-Prompt scheiterte zuerst mit `MAX_TOKENS`; nach Fix + Worker-Neustart + Job-Reset erfolgreich abgeschlossen.
+7. Projekt-Detail-API liefert `lyricsPath`, `sunoPromptPath`, `_lyrics`, `_sunoPrompt`, `negativePrompt`.
+8. Dashboard-Response liefert Track-Arrays defensiv und bestehende Tracks mit `audioUrl`.
+9. `/api/audio/...` Range-Request auf bestehendem Track returned 206 `audio/mpeg`.
+
+Nicht per Browser verifiziert: Clipboard-Button, Rating-Slider, Favorite-Klick und sichtbarer Mini-Player-Button. API/Build/Typecheck decken die geänderten Pfade ab, aber ein echter Browser-E2E steht noch aus.
+
+## Aktueller Systemstand
+
+- **Branch**: `main`
+- **Lokal**: Next dev server und Worker wurden für den E2E-Smoke gestartet.
+- **Produktion**: CT 100 läuft weiterhin Docker Compose; nach Code-Änderungen muss Image neu gebaut werden.
+- **CT 100 RAM**: 10240 MB.
+
+## Nächste Schritte
+
+### 1. Commit, Push, Deploy
+
+Nach Abschluss dieser Session committen, pushen und deployen:
+
+```bash
+git add app components lib worker tests HANDOFF.md
+git commit -m "Fix dashboard player and QA stability issues"
+git push
+
 cd "/Users/peter/claude_code/AI Music Factory" && \
   tar czf /tmp/amf-code.tar.gz --exclude=node_modules --exclude=.next --exclude='prisma/dev.db' \
   --exclude=storage --exclude=.env.local . && \
   scp /tmp/amf-code.tar.gz proxmox-prod:/tmp/ && \
   ssh proxmox-prod "pct push 100 /tmp/amf-code.tar.gz /tmp/amf-code.tar.gz && \
     pct exec 100 -- bash -c 'cd /opt/amf && tar xzf /tmp/amf-code.tar.gz && docker compose build web worker telegram-poller && docker compose up -d'"
-# WICHTIG: immer alle 3 Container bauen (Code ist ins Image gebacken, kein Hot-Reload!)
 ```
 
-## Offene Dev-Todos
+Danach fehlgeschlagene Intro-/Videojobs zurücksetzen, falls nötig:
 
-- **Intro-Render Timeout** — `execSync` von 180s auf 480s erhöhen (s. oben)
-- **Mini-Player Dashboard** — Play/Pause je Track, nur einer gleichzeitig
-- DNA-Bereiche als Kapitelmarken (Sections brauchen `type`-Labels)
-- Clip-Pool vergrößern / Pixabay als 2. Quelle
-- YouTube Caption-Upload: re-auth mit `youtube.force-ssl` Scope
-- `openai-whisper` fehlt im Docker-Image (deaktiviert wegen pkg_resources Bug im Build)
+```sql
+UPDATE "Job" SET status='pending', attempts=0, "lastError"=NULL
+WHERE type='intro_render' AND status='failed';
+UPDATE "VideoJob" SET status='pending', "errorMessage"=NULL WHERE status='failed';
+```
+
+### 2. Browser-E2E nachholen
+
+Sobald Browser-Automation wieder nutzbar ist oder manuell im Browser:
+
+- Dashboard lädt.
+- Projekt anlegen mit Preset.
+- Generate All Variants.
+- Tabs zeigen Lyrics + Suno Prompt.
+- Copy-Button landet in Clipboard.
+- Rating speichern.
+- Favorite setzen.
+- Dashboard zeigt Score und Mini-Player-Button bei Tracks mit Audio.
+
+### 3. Preset-Audio-Upload-Bug
+
+Peter hat gemeldet: Beim Upload von Presets funktioniert der Audiodatei-Upload nicht, weder Drag & Drop noch Button.
+
+Das ist bewusst **noch nicht gefixt**. Als nächstes nach Mini-Player/QA untersuchen:
+
+- UI: Preset-Upload-Komponente / Dateiinput / Dropzone-Handler.
+- API: `app/api/presets/from-audio`.
+- Prüfen, ob Button keinen `input.click()` triggert oder ob FormData/API scheitert.
+
+### 4. Weitere offene QA-Findings
+
+- LLM-Client hat noch keinen gezielten Retry für Netzwerk/429/5xx.
+- `GEMINI_API_KEY` / `OPENROUTER_API_KEY` sollten zentral getrimmt werden; `.env.example` und README auf aktuellen Gemini-primär/OpenRouter-Fallback-Stand bringen.
+- Externe API-Routes sollten noch konsistente Top-Level-`try/catch` JSON-500s bekommen.
+- Globales Job-Timeout pro Worker-Job fehlt weiterhin.
+- Payload-Parsing im Worker ist noch nicht typisiert/validiert.
 
 ## Gotchas
 
@@ -105,8 +142,8 @@ cd "/Users/peter/claude_code/AI Music Factory" && \
 | Prisma Schema | Local = sqlite, Docker-Build patcht auf postgresql per `sed` |
 | force-dynamic | Alle API-Routes haben `export const dynamic = "force-dynamic"` |
 | VideoJob "ready" | Status `"ready"` = Freigabe, nicht `"done"` |
-| tsx im Docker | tsx liest TS-Quellcode NICHT live — Code ist ins Image gebacken. Immer rebuild! |
-| Intro-Render | hyperframes Chrome braucht > 300s; execSync-Timeout muss 480s sein |
+| tsx im Docker | Code ist ins Image gebacken. Immer rebuild, nicht nur restart. |
+| Intro-Render | hyperframes Chrome braucht > 300s; Timeout ist jetzt 480s |
 | CT 100 RAM | 10240 MB — wichtig wegen hyperframes `LOW_MEMORY_TOTAL_MB_THRESHOLD=8192` |
-| Disk CT 100 | 30 GB; nach mehreren Rebuilds: `docker builder prune -f` (4–5 GB Build-Cache) |
-| openai-whisper | Deaktiviert im Docker (pkg_resources Bug) — lokal noch verfügbar |
+| Disk CT 100 | 30 GB; nach mehreren Rebuilds: `docker builder prune -f` |
+| Browser-Automation | In dieser Session blockiert: `browser-client is not trusted` |

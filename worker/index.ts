@@ -412,26 +412,30 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
   // Cache remaining Suno credits after successful generation
   fetchAndCacheSunoCredits().catch(() => {})
 
-  // Notify Telegram — one card per new track
-  const newTracks = await prisma.track.findMany({
-    where: { variantId: variant.id },
-    orderBy: { createdAt: "desc" },
-    take: files.length,
-  })
-  for (const track of newTracks) {
-    await sendTrackCard({
-      trackId:      track.id,
-      trackIndex:   track.index,
-      versionName:  track.versionName,
-      audioPath:    track.audioPath,
-      projectTitle: variant.project.title,
-      variantLabel: variant.label,
-      scoreTotal:   track.aiScoreTotal,
-      scoreHook:    track.aiScoreHook,
-      scoreVocal:   track.aiScoreVocal,
-      scoreBeat:    track.aiScoreBeat,
-      aiNotes:      track.aiNotes,
+  try {
+    // Notify Telegram — one card per new track
+    const newTracks = await prisma.track.findMany({
+      where: { variantId: variant.id },
+      orderBy: { createdAt: "desc" },
+      take: files.length,
     })
+    for (const track of newTracks) {
+      await sendTrackCard({
+        trackId:      track.id,
+        trackIndex:   track.index,
+        versionName:  track.versionName,
+        audioPath:    track.audioPath,
+        projectTitle: variant.project.title,
+        variantLabel: variant.label,
+        scoreTotal:   track.aiScoreTotal,
+        scoreHook:    track.aiScoreHook,
+        scoreVocal:   track.aiScoreVocal,
+        scoreBeat:    track.aiScoreBeat,
+        aiNotes:      track.aiNotes,
+      })
+    }
+  } catch (e) {
+    console.warn("[Worker] Telegram track card skipped:", (e as Error).message)
   }
 
   // If all variants of this project are completed, mark project as completed too
@@ -701,17 +705,25 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
       outputPath: path.relative(project.folderPath, finalOutputPath),
     },
   })
+  await markDone(job.id, {
+    videoJobId,
+    outputPath: path.relative(project.folderPath, finalOutputPath),
+  })
 
-  const { sendVideoReadyCard } = await import("@/lib/telegram")
-  const thumbExists = await fs.access(thumbnailPath).then(() => true).catch(() => false)
-  await sendVideoReadyCard(
-    { id: videoJobId },
-    { versionName: track.versionName, id: track.id },
-    { title: project.title, id: project.id },
-    thumbExists ? thumbnailPath : undefined,
-    previewExists ? previewPath : undefined,
-    { width: 960, height: 540 }
-  )
+  try {
+    const { sendVideoReadyCard } = await import("@/lib/telegram")
+    const thumbExists = await fs.access(thumbnailPath).then(() => true).catch(() => false)
+    await sendVideoReadyCard(
+      { id: videoJobId },
+      { versionName: track.versionName, id: track.id },
+      { title: project.title, id: project.id },
+      thumbExists ? thumbnailPath : undefined,
+      previewExists ? previewPath : undefined,
+      { width: 960, height: 540 }
+    )
+  } catch (e) {
+    console.warn("[Worker] Telegram video ready card skipped:", (e as Error).message)
+  }
 }
 
 async function handleYoutubeUploadJob(job: { id: string; payload: string; variantId: string | null }) {
@@ -789,8 +801,14 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
     }
   }
 
-  const { sendYouTubeLiveCard } = await import("@/lib/telegram")
-  await sendYouTubeLiveCard(url, title)
+  await markDone(job.id, { videoJobId, youtubeUrl: url, youtubeVideoId: videoId })
+
+  try {
+    const { sendYouTubeLiveCard } = await import("@/lib/telegram")
+    await sendYouTubeLiveCard(url, title)
+  } catch (e) {
+    console.warn("[Worker] Telegram YouTube live card skipped:", (e as Error).message)
+  }
 }
 
 async function handleIntroRenderJob(job: { id: string; payload: string; variantId: string | null }) {
@@ -842,6 +860,10 @@ async function handleIntroRenderJob(job: { id: string; payload: string; variantI
   })
 
   await enqueue("video_render", null, { trackId, videoJobId, skipIntro: true })
+  await markDone(job.id, {
+    videoJobId,
+    introPath: path.relative(project.folderPath, introOutputPath),
+  })
 }
 
 async function processJob() {
@@ -975,4 +997,7 @@ async function main() {
   process.on("SIGTERM", shutdown)
 }
 
-main().catch(console.error)
+main().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})

@@ -8,6 +8,14 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const variant = await prisma.variant.findUnique({
+      where: { id: params.id },
+      select: { id: true },
+    })
+    if (!variant) {
+      return NextResponse.json({ error: "Variant not found" }, { status: 404 })
+    }
+
     const tracks = await prisma.track.findMany({
       where: { variantId: params.id },
       orderBy: { index: "asc" },

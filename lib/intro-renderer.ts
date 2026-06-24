@@ -53,7 +53,7 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     execSync(
       `npx hyperframes render --output "${outputPath}"`,
-      { cwd: tmpDir, timeout: 180_000, stdio: "pipe" }
+      { cwd: tmpDir, timeout: 480_000, stdio: "pipe" }
     )
 
     return outputPath

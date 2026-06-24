@@ -25,6 +25,14 @@ export function projectFolderPath(slug: string): string {
   return path.join(STORAGE_ROOT, `${datePrefix()}_${slug}`)
 }
 
+export function projectFileUrl(folderPath: string, relativePath: string | null | undefined): string | null {
+  if (!relativePath) return null
+
+  const folderName = path.basename(folderPath)
+  const segments = [folderName, ...relativePath.split(/[\\/]/)].filter(Boolean)
+  return `/api/audio/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`
+}
+
 export async function ensureProjectFolder(slug: string): Promise<string> {
   const folderPath = projectFolderPath(slug)
 

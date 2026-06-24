@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"
 
 import { NextRequest, NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import * as fs from "fs/promises"
 import { readFile } from "@/lib/storage"
@@ -54,7 +55,20 @@ export async function PATCH(
     const { title, language, genre, mood, vibe, bpm, vocalType, songLength, brief, instrumental, variantCount, poemAuthor, poemTitle } = body
 
     const parsedBpm = bpm != null && bpm !== "" ? parseInt(String(bpm), 10) : null
-    const parsedVariantCount = variantCount != null && variantCount !== "" ? Math.max(1, Math.min(5, parseInt(String(variantCount), 10))) : undefined
+    if (parsedBpm !== null && Number.isNaN(parsedBpm)) {
+      return NextResponse.json(
+        { error: "Invalid value for bpm: must be a number", code: "VALIDATION_ERROR" },
+        { status: 400 }
+      )
+    }
+    const parsedVariantCountRaw = variantCount != null && variantCount !== "" ? parseInt(String(variantCount), 10) : undefined
+    if (parsedVariantCountRaw !== undefined && Number.isNaN(parsedVariantCountRaw)) {
+      return NextResponse.json(
+        { error: "Invalid value for variantCount: must be a number", code: "VALIDATION_ERROR" },
+        { status: 400 }
+      )
+    }
+    const parsedVariantCount = parsedVariantCountRaw !== undefined ? Math.max(1, Math.min(5, parsedVariantCountRaw)) : undefined
 
     const project = await prisma.project.update({
       where: { id: params.id },
@@ -77,6 +91,12 @@ export async function PATCH(
     return NextResponse.json({ project })
   } catch (error) {
     console.error("Update project error:", error)
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      return NextResponse.json(
+        { error: "Project not found", code: "NOT_FOUND" },
+        { status: 404 }
+      )
+    }
     return NextResponse.json(
       { error: "Failed to update project", code: "INTERNAL_ERROR" },
       { status: 500 }

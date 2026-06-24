@@ -63,6 +63,13 @@ interface Project {
   variants: Variant[]
 }
 
+function normalizeProject(project: Project): Project {
+  return {
+    ...project,
+    variants: Array.isArray(project.variants) ? project.variants : [],
+  }
+}
+
 interface TrackSection {
   type: string
   startSec: number
@@ -275,10 +282,11 @@ export default function ProjectDetail() {
           setLoading(false)
           return
         }
-        setProject(data.project)
+        const normalizedProject = normalizeProject(data.project)
+        setProject(normalizedProject)
         // File content is embedded in the API response — no separate fetch needed
         const fileMap: Record<string, VariantFiles> = {}
-        for (const v of (data.project.variants ?? [])) {
+        for (const v of normalizedProject.variants) {
           fileMap[v.id] = {
             lyrics: v._lyrics ?? null,
             sunoPrompt: v._sunoPrompt ?? null,
@@ -286,7 +294,7 @@ export default function ProjectDetail() {
           }
         }
         setFiles(fileMap)
-        loadAllTracks(data.project.variants ?? [])
+        loadAllTracks(normalizedProject.variants)
       })
       .catch((err) => {
         console.error(err)
@@ -344,7 +352,7 @@ export default function ProjectDetail() {
         const res = await fetch(`/api/variants/${v.id}/tracks`)
         if (res.ok) {
           const data = await res.json()
-          trackMap[v.id] = data.tracks || []
+          trackMap[v.id] = Array.isArray(data?.tracks) ? data.tracks : []
         } else {
           trackMap[v.id] = []
         }
@@ -400,10 +408,21 @@ export default function ProjectDetail() {
       })
 
       if (readyVariants.length > 0) {
-        await Promise.all(readyVariants.map(v =>
-          fetch(`/api/variants/${v.id}/generate-music`, { method: "POST" }).catch(() => null)
-        ))
-        setQueuedMusicIds(prev => new Set([...prev, ...readyVariants.map(v => v.id)]))
+        const startedIds: string[] = []
+        const results = await Promise.all(readyVariants.map(async (v) => {
+          const res = await fetch(`/api/variants/${v.id}/generate-music`, { method: "POST" })
+          if (res.ok) {
+            startedIds.push(v.id)
+            return null
+          }
+          const data = await res.json().catch(() => ({}))
+          return data.error || `Fehler beim Starten von Variante ${v.label}`
+        }))
+        const firstError = results.find(Boolean)
+        if (firstError) setError(String(firstError))
+        if (startedIds.length > 0) {
+          setQueuedMusicIds(prev => new Set([...prev, ...startedIds]))
+        }
       }
       if (needsText.length > 0) {
         const res = await fetch(`/api/projects/${params.id}/generate`, { method: "POST" })
@@ -507,11 +526,15 @@ export default function ProjectDetail() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lyrics: editingLyricsValue }),
       })
-      if (!res.ok) throw new Error("Failed to save")
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || "Failed to save lyrics")
+      }
       setEditingLyricsId(null)
       loadProject()
     } catch (e) {
       console.error(e)
+      setError(e instanceof Error ? e.message : "Failed to save lyrics")
     } finally {
       setSavingLyricsId(null)
     }
@@ -525,11 +548,15 @@ export default function ProjectDetail() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sunoPrompt: editingPromptValue }),
       })
-      if (!res.ok) throw new Error("Failed to save")
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || "Failed to save prompt")
+      }
       setEditingPromptId(null)
       loadProject()
     } catch (e) {
       console.error(e)
+      setError(e instanceof Error ? e.message : "Failed to save prompt")
     } finally {
       setSavingPromptId(null)
     }

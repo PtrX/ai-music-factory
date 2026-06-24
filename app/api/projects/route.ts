@@ -1,8 +1,9 @@
 export const dynamic = "force-dynamic"
 
 import { NextRequest, NextResponse } from "next/server"
+import { Prisma, type Project } from "@prisma/client"
 import { prisma } from "@/lib/db"
-import { slugify, ensureProjectFolder, saveProjectJson } from "@/lib/storage"
+import { slugify, ensureProjectFolder, saveProjectJson, projectFileUrl } from "@/lib/storage"
 import { enqueue } from "@/lib/queue"
 import { selectTrackOverview } from "@/lib/tracks/overview"
 
@@ -47,33 +48,44 @@ export async function POST(req: NextRequest) {
     }
 
     const baseSlug = slugify(title)
-    // Ensure unique slug by appending suffix if needed
     let slug = baseSlug
-    let suffix = 1
-    while (await prisma.project.findUnique({ where: { slug } })) {
-      slug = `${baseSlug}-${suffix++}`
+    let folderPath = ""
+    let project: Project | null = null
+    for (let suffix = 0; suffix < 50; suffix++) {
+      slug = suffix === 0 ? baseSlug : `${baseSlug}-${suffix}`
+      folderPath = await ensureProjectFolder(slug)
+      try {
+        project = await prisma.project.create({
+          data: {
+            slug,
+            title,
+            language,
+            genre: genre || "",
+            mood: mood || "",
+            vibe: vibe || "",
+            bpm: parsedBpm,
+            vocalType: instrumental ? "instrumental" : (vocalType || null),
+            songLength: songLength || null,
+            variantCount: count,
+            brief: brief?.trim() || null,
+            poemAuthor: poemAuthor?.trim() || null,
+            poemTitle: poemTitle?.trim() || null,
+            folderPath,
+            presetId: presetId || null,
+          },
+        })
+        break
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue
+        throw error
+      }
     }
-    const folderPath = await ensureProjectFolder(slug)
-
-    const project = await prisma.project.create({
-      data: {
-        slug,
-        title,
-        language,
-        genre: genre || "",
-        mood: mood || "",
-        vibe: vibe || "",
-        bpm: parsedBpm,
-        vocalType: instrumental ? "instrumental" : (vocalType || null),
-        songLength: songLength || null,
-        variantCount: count,
-        brief: brief?.trim() || null,
-        poemAuthor: poemAuthor?.trim() || null,
-        poemTitle: poemTitle?.trim() || null,
-        folderPath,
-        presetId: presetId || null,
-      },
-    })
+    if (!project) {
+      return NextResponse.json(
+        { error: "Could not create a unique project slug", code: "SLUG_CONFLICT" },
+        { status: 409 }
+      )
+    }
 
     if (presetId) {
       await prisma.preset.update({
@@ -149,6 +161,7 @@ export async function GET() {
                 aiScoreTotal: true,
                 scoreTotal: true,
                 structureJson: true,
+                audioPath: true,
                 coverPath: true,
                 sunoImageUrl: true,
                 sunoSourceImageUrl: true,
@@ -187,15 +200,14 @@ export async function GET() {
     }
 
     const shaped = projects.map((p) => {
-      const folderName = p.folderPath.split(/[\\/]/).pop()
       return {
         ...p,
         variants: p.variants.map(({ tracks, ...v }) => {
           const bestTrack = selectTrackOverview(tracks)
           const shapedTracks = tracks.map((t) => {
             const vj = t.videoJobs[0]
-            const coverUrl = t.coverPath && folderName
-              ? `/api/audio/${encodeURIComponent(folderName)}/${t.coverPath}`
+            const coverUrl = t.coverPath
+              ? projectFileUrl(p.folderPath, t.coverPath)
               : (t.sunoSourceImageUrl || t.sunoImageUrl || null)
             const structure = (() => {
               if (!t.structureJson) return { bpmDetected: null, keySignature: null, durationSec: null, sectionCount: null, peakCount: null }
@@ -227,6 +239,7 @@ export async function GET() {
               versionName: t.versionName || t.suggestedVersionName || null,
               isFavorite: t.isFavorite,
               scoreTotal: t.scoreTotal ?? t.aiScoreTotal,
+              audioUrl: projectFileUrl(p.folderPath, t.audioPath),
               coverUrl,
               video: videoState,
               ...structure,
@@ -240,8 +253,8 @@ export async function GET() {
             track: bestTrack
               ? {
                 ...bestTrack,
-                coverUrl: bestTrack.coverPath && folderName
-                  ? `/api/audio/${encodeURIComponent(folderName)}/${bestTrack.coverPath}`
+                coverUrl: bestTrack.coverPath
+                  ? projectFileUrl(p.folderPath, bestTrack.coverPath)
                   : bestTrack.coverUrl,
               }
               : null,

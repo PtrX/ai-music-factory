@@ -48,7 +48,7 @@ export function ProjectForm() {
       .then(async (res) => {
         if (!res.ok) throw new Error("Failed to load presets")
         const data = await res.json()
-        setPresets(data.presets ?? [])
+        setPresets(Array.isArray(data?.presets) ? data.presets : [])
       })
       .catch((err) => console.error("Failed to load presets:", err))
   }, [])

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, type MouseEvent } from "react"
+import { useEffect, useState, useCallback, useRef, type MouseEvent } from "react"
 import Link from "next/link"
 import { projectGradient } from "@/lib/project-color"
 
@@ -32,6 +32,7 @@ interface TrackRow {
   durationSec: number | null
   sectionCount: number | null
   peakCount: number | null
+  audioUrl: string | null
   coverUrl: string | null
   video: VideoSummary
 }
@@ -155,6 +156,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [videoBusy, setVideoBusy] = useState<string | null>(null)
+  const [playingId, setPlayingId] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   // collapsed state: Set of collapsed IDs (project or variant)
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set())
@@ -164,6 +167,27 @@ export default function Dashboard() {
   const [favoriteOverride, setFavoriteOverride] = useState<Record<string, boolean>>({})
 
   const stop = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation() }
+
+  const toggleTrackPlayback = (e: MouseEvent, track: TrackRow) => {
+    stop(e)
+    if (!track.audioUrl) return
+
+    if (playingId === track.id) {
+      audioRef.current?.pause()
+      setPlayingId(null)
+      return
+    }
+
+    if (audioRef.current) {
+      audioRef.current.src = track.audioUrl
+      audioRef.current.play().then(() => {
+        setPlayingId(track.id)
+      }).catch(() => {
+        setPlayingId(null)
+        setError("Track konnte nicht abgespielt werden.")
+      })
+    }
+  }
 
   const approveVideo = async (e: MouseEvent, videoJobId: string) => {
     stop(e); setVideoBusy(videoJobId)
@@ -197,7 +221,20 @@ export default function Dashboard() {
     setError(null)
     fetch("/api/projects")
       .then(r => r.ok ? r.json() : { projects: [] })
-      .then(d => setProjects(Array.isArray(d?.projects) ? d.projects : []))
+      .then(d => {
+        const normalized = Array.isArray(d?.projects)
+          ? d.projects.map((project: Project) => ({
+            ...project,
+            variants: Array.isArray(project.variants)
+              ? project.variants.map((variant) => ({
+                ...variant,
+                tracks: Array.isArray(variant.tracks) ? variant.tracks : [],
+              }))
+              : [],
+          }))
+          : []
+        setProjects(normalized)
+      })
       .catch(() => { setError("Projekte konnten nicht geladen werden."); setProjects([]) })
       .finally(() => setLoading(false))
   }, [])
@@ -224,6 +261,7 @@ export default function Dashboard() {
 
   return (
     <div className="p-6">
+      <audio ref={audioRef} onEnded={() => setPlayingId(null)} />
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-[13px] font-bold tracking-[0.5px]" style={{ color: "var(--text-primary)" }}>
@@ -379,6 +417,21 @@ export default function Dashboard() {
                                     onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-base)")}
                                     onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                                   >
+                                    {t.audioUrl && (
+                                      <button
+                                        onClick={(e) => toggleTrackPlayback(e, t)}
+                                        className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs"
+                                        title={playingId === t.id ? "Pause" : "Abspielen"}
+                                        style={{
+                                          border: "1px solid var(--border-hex)",
+                                          background: playingId === t.id ? "var(--accent-bg)" : "var(--surface-base)",
+                                          color: playingId === t.id ? "var(--accent-green)" : "var(--text-nav)",
+                                        }}
+                                      >
+                                        {playingId === t.id ? "||" : "▶"}
+                                      </button>
+                                    )}
+
                                     {/* Star */}
                                     <button
                                       onClick={(e) => toggleFavorite(e, t.id, t.isFavorite)}

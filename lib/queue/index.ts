@@ -70,6 +70,7 @@ export async function markFailed(jobId: string, error: string) {
   try {
     const job = await prisma.job.findUnique({ where: { id: jobId } })
     if (!job) return
+    if (job.status !== "processing") return
 
     const newAttempts = job.attempts + 1
     const shouldFail = newAttempts >= MAX_ATTEMPTS
