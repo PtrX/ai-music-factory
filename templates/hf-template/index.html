@@ -8,9 +8,10 @@
 <head>
   <meta charset="utf-8" />
   <title>Intro</title>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <script src="gsap.min.js"></script>
+  <style>
+    @font-face { font-family: 'Space Grotesk'; src: local('Arial'), local('Helvetica Neue'); }
+  </style>
   <style>
     :root { --fg: #e8f0ee; --accent: #1db954; }
     html, body { margin: 0; background: #0d1414; overflow: hidden; }
@@ -33,12 +34,12 @@
       margin-bottom: 22px;
     }
     #credit {
-      font-family: 'JetBrains Mono', monospace; font-weight: 500;
+      font-family: 'Courier New', monospace; font-weight: 500;
       font-size: 22px; letter-spacing: 6px; text-transform: uppercase;
       color: var(--accent); margin-bottom: 16px;
     }
     #title {
-      margin: 0; font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+      margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 700;
       font-size: 88px; line-height: 1.0; color: var(--fg);
       letter-spacing: -1px;
     }
@@ -46,7 +47,7 @@
     #underline { width: 0; height: 4px; border-radius: 2px; background: var(--accent);
       box-shadow: 0 0 16px var(--accent); margin: 18px 0 14px; }
     #version {
-      font-family: 'JetBrains Mono', monospace; font-weight: 500;
+      font-family: 'Courier New', monospace; font-weight: 500;
       font-size: 28px; letter-spacing: 5px; text-transform: uppercase;
       color: var(--fg); opacity: 0.82;
     }
