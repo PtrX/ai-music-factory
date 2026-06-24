@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { unstable_noStore as noStore } from "next/cache"
 import { getSystemStatus, type ServiceStatus } from "@/lib/system-status"
 
 function Dot({ available }: { available: boolean }) {
@@ -30,6 +31,7 @@ function ServiceChip({ s }: { s: ServiceStatus }) {
 }
 
 async function StatusBarContent() {
+  noStore()
   const services = await getSystemStatus()
 
   const allGroups: { key: ServiceStatus["group"]; items: ServiceStatus[] }[] = [
