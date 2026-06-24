@@ -38,6 +38,10 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
 
     await fs.writeFile(path.join(tmpDir, "index.html"), html)
 
+    // Copy GSAP so Chrome can load it offline (index.html references it as relative path)
+    const templateDir = path.join(process.cwd(), "templates", "hf-template")
+    await fs.copyFile(path.join(templateDir, "gsap.min.js"), path.join(tmpDir, "gsap.min.js"))
+
     // Re-encode bg clip with dense keyframes (required by HyperFrames for seek)
     const bgPath = path.join(tmpDir, "bg.mp4")
     execSync(
