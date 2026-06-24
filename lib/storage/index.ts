@@ -3,6 +3,7 @@ import * as path from "path"
 
 export const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
 const STORAGE_ROOT = path.join(STORAGE_BASE, "projects")
+export const STORAGE_TMP = path.join(STORAGE_BASE, "tmp")
 
 function datePrefix(): string {
   const now = new Date()
@@ -50,6 +51,11 @@ export async function ensureProjectFolder(slug: string): Promise<string> {
   }
 
   return folderPath
+}
+
+export async function createStorageTempDir(prefix: string): Promise<string> {
+  await fs.mkdir(STORAGE_TMP, { recursive: true })
+  return fs.mkdtemp(path.join(STORAGE_TMP, `${prefix}-`))
 }
 
 export async function writeFile(folderPath: string, relativePath: string, content: string | Buffer): Promise<string> {

@@ -2,7 +2,7 @@
 <html lang="en" data-composition-variables='[
   {"id":"title","type":"string","label":"Title","default":"AI Music Factory"},
   {"id":"version","type":"string","label":"Version","default":"Original Mix"},
-  {"id":"credit","type":"string","label":"Credit","default":"AI Music Factory"},
+  {"id":"credit","type":"string","label":"Credit","default":"AI Music Factory by PTRX"},
   {"id":"accent","type":"color","label":"Accent","default":"#1db954"}
 ]'>
 <head>
@@ -68,7 +68,7 @@
     <script>
       const v = window.__hyperframes.getVariables();
       document.documentElement.style.setProperty('--accent', v.accent);
-      document.getElementById('credit').textContent = v.credit || 'AI Music Factory';
+      document.getElementById('credit').textContent = v.credit || 'AI Music Factory by PTRX';
       document.getElementById('version').textContent = v.version || '';
       const titleEl = document.getElementById('title');
       titleEl.innerHTML = String(v.title).split(' ').map(w => `<span class="w">${w}</span>`).join(' ');

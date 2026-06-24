@@ -1,7 +1,10 @@
 import * as fs from "fs/promises"
 import * as path from "path"
-import * as os from "os"
 import { execSync } from "child_process"
+import { createStorageTempDir } from "./storage"
+
+export const INTRO_CREDIT = "AI Music Factory by PTRX"
+export const HYPERFRAMES_RENDER_TIMEOUT_MS = 900_000
 
 export interface IntroRenderInput {
   title: string
@@ -15,8 +18,7 @@ export interface IntroRenderInput {
 export async function renderIntro(input: IntroRenderInput): Promise<string> {
   const { title, version, accentColor, backgroundClipPath, introDurationSec, outputPath } = input
 
-  const tmpDir = path.join(os.tmpdir(), `hf-intro-${Date.now()}`)
-  await fs.mkdir(tmpDir, { recursive: true })
+  const tmpDir = await createStorageTempDir("hf-intro")
 
   try {
     const templatePath = path.join(process.cwd(), "templates", "hf-template", "index.html")
@@ -25,7 +27,7 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
     const vars = JSON.stringify([
       { id: "title", type: "string", label: "Title", default: title },
       { id: "version", type: "string", label: "Version", default: version },
-      { id: "credit", type: "string", label: "Credit", default: "AI Music Factory" },
+      { id: "credit", type: "string", label: "Credit", default: INTRO_CREDIT },
       { id: "accent", type: "color", label: "Accent", default: accentColor },
     ])
     html = html.replace(
@@ -53,7 +55,7 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     execSync(
       `npx hyperframes render --output "${outputPath}"`,
-      { cwd: tmpDir, timeout: 480_000, stdio: "pipe" }
+      { cwd: tmpDir, timeout: HYPERFRAMES_RENDER_TIMEOUT_MS, stdio: "pipe" }
     )
 
     return outputPath

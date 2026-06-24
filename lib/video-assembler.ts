@@ -1,9 +1,9 @@
 import * as fs from "fs/promises"
 import * as path from "path"
-import * as os from "os"
 import { execSync } from "child_process"
 import type { VisualDirective, ArtistIdentityData } from "./visual-director"
 import type { ClipResult } from "./clip-library"
+import { createStorageTempDir } from "./storage"
 
 export interface AssemblyInput {
   audioPath: string
@@ -104,8 +104,7 @@ export async function assembleFullVideo(input: {
   outputPath: string
 }): Promise<string> {
   const { introPath, brollPath, audioPath, srtPath, outputPath } = input
-  const workDir = path.join(os.tmpdir(), `amf-assemble-${Date.now()}`)
-  await fs.mkdir(workDir, { recursive: true })
+  const workDir = await createStorageTempDir("amf-assemble")
 
   try {
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
