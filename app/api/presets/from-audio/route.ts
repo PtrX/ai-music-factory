@@ -5,7 +5,8 @@ import * as path from "path"
 import * as fs from "fs/promises"
 import { prisma } from "@/lib/db"
 import { analyzeAudioForPreset } from "@/lib/preset-analyzer"
-import { STORAGE_BASE } from "@/lib/storage"
+
+const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
 
 export const maxDuration = 120
 

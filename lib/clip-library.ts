@@ -2,7 +2,8 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import { prisma } from "@/lib/db"
 import type { VisualDirective } from "./visual-director"
-import { STORAGE_BASE } from "@/lib/storage"
+
+const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
 
 export interface ClipResult {
   id: string

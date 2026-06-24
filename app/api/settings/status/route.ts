@@ -3,7 +3,8 @@ export const dynamic = "force-dynamic"
 import { NextResponse } from "next/server"
 import * as fs from "fs/promises"
 import * as path from "path"
-import { STORAGE_BASE } from "@/lib/storage"
+
+const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
 
 export async function GET() {
   try {

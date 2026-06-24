@@ -1,7 +1,8 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 import type { TrackStructure } from "@/lib/ai-rating"
-import { STORAGE_BASE } from "@/lib/storage"
+
+const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
 
 interface YouTubeUploadOpts {
   videoPath: string
