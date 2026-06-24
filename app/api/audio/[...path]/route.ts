@@ -5,7 +5,8 @@ import * as fs from "fs/promises"
 import * as fsSync from "fs"
 import * as path from "path"
 
-const STORAGE_ROOT = path.join(process.cwd(), "storage", "projects")
+const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
+const STORAGE_ROOT = path.join(STORAGE_BASE, "projects")
 
 const MIME_TYPES: Record<string, string> = {
   ".mp3": "audio/mpeg",
