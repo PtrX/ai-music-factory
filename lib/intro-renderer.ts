@@ -19,6 +19,7 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
   const { title, version, accentColor, backgroundClipPath, introDurationSec, outputPath } = input
 
   const tmpDir = await createStorageTempDir("hf-intro")
+  const tempEnv = { ...process.env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir }
 
   try {
     const templatePath = path.join(process.cwd(), "templates", "hf-template", "index.html")
@@ -55,7 +56,7 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     execSync(
       `npx hyperframes render --output "${outputPath}"`,
-      { cwd: tmpDir, timeout: HYPERFRAMES_RENDER_TIMEOUT_MS, stdio: "pipe" }
+      { cwd: tmpDir, env: tempEnv, timeout: HYPERFRAMES_RENDER_TIMEOUT_MS, stdio: "pipe" }
     )
 
     return outputPath
