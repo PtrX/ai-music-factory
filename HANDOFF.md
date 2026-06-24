@@ -85,8 +85,7 @@ git commit -m "Fix dashboard player and QA stability issues"
 git push
 
 cd "/Users/peter/claude_code/AI Music Factory" && \
-  tar czf /tmp/amf-code.tar.gz --exclude=node_modules --exclude=.next --exclude='prisma/dev.db' \
-  --exclude=storage --exclude=.env.local . && \
+  git ls-files -z | tar --null -czf /tmp/amf-code.tar.gz --files-from - && \
   scp /tmp/amf-code.tar.gz proxmox-prod:/tmp/ && \
   ssh proxmox-prod "pct push 100 /tmp/amf-code.tar.gz /tmp/amf-code.tar.gz && \
     pct exec 100 -- bash -c 'cd /opt/amf && tar xzf /tmp/amf-code.tar.gz && docker compose build web worker telegram-poller && docker compose up -d'"
