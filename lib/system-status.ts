@@ -3,7 +3,8 @@ import { promisify } from "util"
 import * as fs from "fs/promises"
 import * as path from "path"
 
-const CREDITS_CACHE_PATH = path.join(process.cwd(), "storage", "cache", "suno-credits.json")
+const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
+const CREDITS_CACHE_PATH = path.join(STORAGE_BASE, "cache", "suno-credits.json")
 
 export async function fetchAndCacheSunoCredits(): Promise<number | null> {
   const key = process.env.SUNOAPI_ORG_API_KEY
@@ -148,7 +149,7 @@ async function checkPixabay(): Promise<ServiceStatus> {
 async function checkYouTube(): Promise<ServiceStatus> {
   const hasCredentials = !!(process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET)
   if (!hasCredentials) return { available: false, label: "YouTube", group: "distribution" }
-  const tokenPath = path.join(process.cwd(), "storage", "youtube-tokens.json")
+  const tokenPath = path.join(STORAGE_BASE, "youtube-tokens.json")
   try {
     await fs.access(tokenPath)
     return { available: true, label: "YouTube", detail: "auth", group: "distribution" }
