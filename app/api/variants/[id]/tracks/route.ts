@@ -19,7 +19,7 @@ export async function GET(
     const tracks = await prisma.track.findMany({
       where: { variantId: params.id },
       orderBy: { index: "asc" },
-      include: { videoJobs: { orderBy: { createdAt: "desc" }, take: 1 } },
+      include: { videoJobs: { orderBy: { createdAt: "desc" }, take: 10 } },
     })
     return NextResponse.json({ tracks })
   } catch {

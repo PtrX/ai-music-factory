@@ -1260,7 +1260,9 @@ export default function ProjectDetail() {
                                   } catch { return null }
                                 })()}
                                 {(() => {
-                                  const vj = track.videoJobs?.[0]
+                                  const vj = track.videoJobs?.find(j => j.status === "done" && j.youtubeUrl)
+                                    ?? track.videoJobs?.find(j => j.status !== "cancelled")
+                                    ?? track.videoJobs?.[0]
                                   const canRender = track.structureJson &&
                                     ((track.aiScoreTotal ?? 0) >= 6 || (track.scoreTotal ?? 0) >= 6)
                                   return (
