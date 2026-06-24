@@ -116,7 +116,9 @@ async function handleLyricsJob(job: { id: string; payload: string; variantId: st
     throw new Error(`Invalid lyrics job payload: missing required fields (title=${input.title}, language=${input.language}, genre=${input.genre}, mood=${input.mood})`)
   }
 
-  const lyrics = await generateLyrics(input)
+  const lyrics = input.instrumental
+    ? "[Instrumental]"
+    : await generateLyrics(input)
 
   const variant = await prisma.variant.findUnique({
     where: { id: variantId },
