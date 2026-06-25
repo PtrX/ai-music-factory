@@ -168,7 +168,7 @@ export async function GET() {
                 createdAt: true,
                 videoJobs: {
                   orderBy: { createdAt: "desc" },
-                  take: 1,
+                  take: 10,
                   select: { id: true, status: true, youtubeUrl: true, youtubeVideoId: true },
                 },
               },
@@ -182,7 +182,10 @@ export async function GET() {
     const ACTIVE = ["queued", "rendering", "uploading", "approved"]
     type Trk = (typeof projects)[number]["variants"][number]["tracks"][number]
     const videoOf = (tracks: Trk[], preferredTrackId?: string | null) => {
-      const vjOf = (t: Trk) => t.videoJobs[0]
+      const vjOf = (t: Trk) =>
+        t.videoJobs.find(j => j.status === "done" && j.youtubeUrl) ??
+        t.videoJobs.find(j => j.status !== "cancelled") ??
+        t.videoJobs[0]
       const live = tracks.find((t) => vjOf(t)?.status === "done" && vjOf(t)?.youtubeUrl)
       const ready = tracks.find((t) => vjOf(t)?.status === "ready")
       const rendering = tracks.find((t) => ACTIVE.includes(vjOf(t)?.status ?? ""))
