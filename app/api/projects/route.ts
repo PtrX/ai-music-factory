@@ -208,7 +208,10 @@ export async function GET() {
         variants: p.variants.map(({ tracks, ...v }) => {
           const bestTrack = selectTrackOverview(tracks)
           const shapedTracks = tracks.map((t) => {
-            const vj = t.videoJobs[0]
+            const vj =
+              t.videoJobs.find(j => j.status === "done" && j.youtubeUrl) ??
+              t.videoJobs.find(j => j.status !== "cancelled") ??
+              t.videoJobs[0]
             const coverUrl = t.coverPath
               ? projectFileUrl(p.folderPath, t.coverPath)
               : (t.sunoSourceImageUrl || t.sunoImageUrl || null)
