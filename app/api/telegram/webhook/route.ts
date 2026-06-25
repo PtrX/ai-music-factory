@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   const text: string = msg.text ?? ""
   const [cmd, ...args] = text.trim().split(/\s+/)
 
-  switch (cmd) {
+  try { switch (cmd) {
     case "/start":
     case "/help":
       await registerBotCommands()
@@ -58,7 +58,11 @@ export async function POST(req: NextRequest) {
     case "/approve": await handleApproveCmd(args[0]); break
     case "/reject":  await handleRejectCmd(args[0]); break
     case "/generate":await handleGenerateCmd(args[0]); break
+    case "/video":
     case "/videos":  await handleVideosCmd(); break
+  } } catch (err) {
+    console.error("[Telegram] command handler error:", err)
+    await sendTelegramNotification(`⚠️ Fehler: ${(err as Error).message?.slice(0, 100) ?? "Unbekannt"}`)
   }
 
   return NextResponse.json({ ok: true })
@@ -251,7 +255,6 @@ async function handleQueue() {
       by: ["type"],
       where: { status: "pending" },
       _count: { _all: true },
-      orderBy: { _count: { type: "desc" } },
     }),
     prisma.job.findMany({ where: { status: "failed" }, take: 3, orderBy: { createdAt: "desc" }, select: { type: true, lastError: true } }),
   ])
