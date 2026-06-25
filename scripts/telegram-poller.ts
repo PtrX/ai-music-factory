@@ -20,6 +20,28 @@ async function getUpdates(offset: number, timeout: number): Promise<any[]> {
   return data.ok ? (data.result ?? []) : []
 }
 
+async function registerCommands() {
+  const commands = [
+    { command: "status",   description: "Worker & Queue Status" },
+    { command: "queue",    description: "Queue Details nach Typ" },
+    { command: "videos",   description: "Ausstehende Video-Freigaben" },
+    { command: "list",     description: "Letzte 5 Projekte" },
+    { command: "tracks",   description: "Letzte 10 Tracks" },
+    { command: "approve",  description: "Track approven: /approve TRACK_ID" },
+    { command: "reject",   description: "Track ablehnen: /reject TRACK_ID" },
+    { command: "generate", description: "Varianten starten: /generate PROJECT_ID" },
+    { command: "help",     description: "Diese Hilfe" },
+  ]
+  const res = await fetch(`${API}/setMyCommands`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ commands }),
+  }).catch(() => null)
+  const json = res ? await res.json().catch(() => null) : null
+  if (json?.ok) console.log("[TgPoller] Bot commands registered")
+  else console.warn("[TgPoller] setMyCommands failed:", json?.description ?? "no response")
+}
+
 async function main() {
   if (!TOKEN) {
     console.error("[TgPoller] TELEGRAM_BOT_TOKEN missing — exiting")
@@ -27,6 +49,7 @@ async function main() {
   }
   // A webhook and getUpdates are mutually exclusive — make sure no webhook is set.
   await fetch(`${API}/deleteWebhook`).catch(() => {})
+  await registerCommands()
 
   // Drain any updates already queued (e.g. button presses from before the poller
   // started) WITHOUT forwarding them — they may have been handled manually.
