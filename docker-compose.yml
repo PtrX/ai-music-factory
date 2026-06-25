@@ -28,6 +28,8 @@ services:
     environment:
       DATABASE_URL: postgresql://amf:${POSTGRES_PASSWORD}@db:5432/amf
       STORAGE_BASE_PATH: /data/storage
+      # Override for YouTube OAuth when using SSH tunnel. Set YOUTUBE_REDIRECT_BASE=http://localhost:3000 in .env before re-auth, remove after.
+      YOUTUBE_REDIRECT_BASE: ${YOUTUBE_REDIRECT_BASE:-}
     volumes:
       - ${STORAGE_DIR:?set STORAGE_DIR to the NAS mount}:/data/storage
     depends_on:

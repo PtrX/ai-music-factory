@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic"
 export async function GET() {
   const clientId = process.env.YOUTUBE_CLIENT_ID
   const clientSecret = process.env.YOUTUBE_CLIENT_SECRET
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  const redirectBase = process.env.YOUTUBE_REDIRECT_BASE ?? process.env.NEXT_PUBLIC_APP_URL
 
-  if (!clientId || !clientSecret || !appUrl) {
+  if (!clientId || !clientSecret || !redirectBase) {
     return NextResponse.json(
       { error: "YouTube OAuth not configured — missing YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, or NEXT_PUBLIC_APP_URL", code: "CONFIGURATION_ERROR" },
       { status: 500 }
@@ -18,7 +18,7 @@ export async function GET() {
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    `${appUrl}/api/auth/youtube/callback`
+    `${redirectBase}/api/auth/youtube/callback`
   )
 
   const url = oauth2Client.generateAuthUrl({

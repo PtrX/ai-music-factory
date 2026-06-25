@@ -15,9 +15,10 @@ export async function GET(req: NextRequest) {
 
     const clientId = process.env.YOUTUBE_CLIENT_ID
     const clientSecret = process.env.YOUTUBE_CLIENT_SECRET
+    const redirectBase = process.env.YOUTUBE_REDIRECT_BASE ?? process.env.NEXT_PUBLIC_APP_URL
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
 
-    if (!clientId || !clientSecret || !appUrl) {
+    if (!clientId || !clientSecret || !redirectBase || !appUrl) {
       return NextResponse.json(
         { error: "YouTube OAuth not configured", code: "CONFIGURATION_ERROR" },
         { status: 500 }
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
         code,
         client_id: clientId,
         client_secret: clientSecret,
-        redirect_uri: `${appUrl}/api/auth/youtube/callback`,
+        redirect_uri: `${redirectBase}/api/auth/youtube/callback`,
         grant_type: "authorization_code",
       }),
     })
