@@ -37,16 +37,17 @@ export async function POST(req: NextRequest) {
   switch (cmd) {
     case "/start":
     case "/help":
+      await registerBotCommands()
       await sendTelegramNotification(
         `🎵 *AI Music Factory Bot*\n\n` +
         `/status — Worker & Queue\n` +
+        `/queue — Queue Details nach Typ\n` +
+        `/videos — Ausstehende Video-Freigaben\n` +
         `/list — Letzte 5 Projekte\n` +
         `/tracks — Letzte 10 Tracks\n` +
-        `/queue — Queue Details\n` +
         `/approve TRACK_ID — Track approven\n` +
         `/reject TRACK_ID — Track ablehnen\n` +
         `/generate PROJECT_ID — Alle Varianten generieren\n` +
-        `/videos — Ausstehende Video-Freigaben\n` +
         `/help — Diese Hilfe`
       )
       break
@@ -75,6 +76,19 @@ async function handleCallbackQuery(cq: {
   const messageId = cq.message?.message_id ?? 0
 
   // Video job actions
+  if (data === "video_approve_all") {
+    try {
+      const readyJobs = await prisma.videoJob.findMany({ where: { status: "ready" }, select: { id: true } })
+      await Promise.all(readyJobs.map(j =>
+        fetch(`${APP_URL}/api/video-jobs/${j.id}/approve`, { method: "POST" }).catch(() => {})
+      ))
+      await answerCallbackQuery(cq.id, `✅ ${readyJobs.length} Videos freigegeben`)
+    } catch {
+      await answerCallbackQuery(cq.id, "Fehler beim Freigeben")
+    }
+    return
+  }
+
   if (data.startsWith("video_approve_")) {
     const jobId = data.replace("video_approve_", "")
     try {
@@ -162,21 +176,24 @@ async function handleCallbackQuery(cq: {
 // ── Command handlers ──────────────────────────────────────────────────
 
 async function handleStatus() {
-  const [pending, processing, failed, projectCount, trackCount] = await Promise.all([
+  const [pending, processing, failed, projectCount, trackCount, readyVideos] = await Promise.all([
     prisma.job.count({ where: { status: "pending" } }),
     prisma.job.count({ where: { status: "processing" } }),
     prisma.job.count({ where: { status: "failed" } }),
     prisma.project.count(),
     prisma.track.count(),
+    prisma.videoJob.count({ where: { status: "ready" } }),
   ])
   const workerStatus = processing > 0 ? "🟢 running" : "⚪ idle"
+  const videoLine = readyVideos > 0 ? `\n🎬 Videos bereit: ${readyVideos} → /videos` : ""
   await sendTelegramNotification(
     `⚙️ *System Status*\n\n` +
     `Worker: ${workerStatus}\n` +
     `📋 Pending: ${pending}\n` +
     `⚙️ Processing: ${processing}\n` +
-    `❌ Failed: ${failed}\n\n` +
-    `📁 ${projectCount} Projects · 🎵 ${trackCount} Tracks`
+    `❌ Failed: ${failed}` +
+    videoLine +
+    `\n\n📁 ${projectCount} Projects · 🎵 ${trackCount} Tracks`
   )
 }
 
@@ -227,15 +244,24 @@ async function handleTracks() {
 }
 
 async function handleQueue() {
-  const [pending, processing, failed] = await Promise.all([
-    prisma.job.count({ where: { status: "pending" } }),
+  const [processing, failed, byType, failedJobs] = await Promise.all([
     prisma.job.count({ where: { status: "processing" } }),
     prisma.job.count({ where: { status: "failed" } }),
+    prisma.job.groupBy({
+      by: ["type"],
+      where: { status: "pending" },
+      _count: { _all: true },
+      orderBy: { _count: { type: "desc" } },
+    }),
+    prisma.job.findMany({ where: { status: "failed" }, take: 3, orderBy: { createdAt: "desc" }, select: { type: true, lastError: true } }),
   ])
-  const failedJobs = failed > 0
-    ? await prisma.job.findMany({ where: { status: "failed" }, take: 3, orderBy: { createdAt: "desc" }, select: { type: true, lastError: true } })
-    : []
+
+  const pending = byType.reduce((s, r) => s + r._count._all, 0)
   let msg = `⚙️ *Worker Queue:*\n• Pending: ${pending}\n• Running: ${processing}\n• Failed: ${failed}`
+
+  if (byType.length > 0) {
+    msg += "\n\n*Pending nach Typ:*\n" + byType.map(r => `  • ${r.type}: ${r._count._all}`).join("\n")
+  }
   if (failedJobs.length > 0) {
     msg += "\n\n*Letzte Fehler:*\n" + failedJobs.map(j => `• ${j.type}: ${(j.lastError ?? "").slice(0, 80)}`).join("\n")
   }
@@ -274,11 +300,39 @@ async function handleVideosCmd() {
   const lines = pendingJobs.map(j => {
     const title = j.track.variant.project.title
     const version = j.track.versionName || "Mix"
-    return `• *${title}* — ${version} \`${j.id.slice(-6)}\``
+    return `• *${title}* — ${version}`
   })
 
-  const msg = `📋 *Ausstehende Videos (${pendingJobs.length})*\n\n${lines.join("\n")}\n\n_Approve via: /approve\\_video [id]_`
-  await sendTelegramNotification(msg)
+  const text = `📋 *Ausstehende Videos (${pendingJobs.length})*\n\n${lines.join("\n")}`
+  const keyboard = pendingJobs.length > 1
+    ? { inline_keyboard: [[{ text: `✅ Alle ${pendingJobs.length} freigeben`, callback_data: "video_approve_all" }]] }
+    : { inline_keyboard: [[{ text: "✅ Freigeben", callback_data: `video_approve_${pendingJobs[0].id}` }]] }
+
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: "Markdown", reply_markup: keyboard }),
+  })
+}
+
+async function registerBotCommands() {
+  if (!BOT_TOKEN) return
+  const commands = [
+    { command: "status",   description: "Worker & Queue Status" },
+    { command: "queue",    description: "Queue Details nach Typ" },
+    { command: "videos",   description: "Ausstehende Video-Freigaben" },
+    { command: "list",     description: "Letzte 5 Projekte" },
+    { command: "tracks",   description: "Letzte 10 Tracks" },
+    { command: "approve",  description: "Track approven: /approve TRACK_ID" },
+    { command: "reject",   description: "Track ablehnen: /reject TRACK_ID" },
+    { command: "generate", description: "Varianten starten: /generate PROJECT_ID" },
+    { command: "help",     description: "Diese Hilfe" },
+  ]
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setMyCommands`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ commands }),
+  }).catch(e => console.error("[Telegram] setMyCommands failed:", e))
 }
 
 async function handleGenerateCmd(projectId: string | undefined) {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db"
+import { sendJobFailureAlert } from "@/lib/telegram"
 
 const MAX_ATTEMPTS = 3
 
@@ -87,6 +88,10 @@ export async function markFailed(jobId: string, error: string) {
         nextRetryAt,
       },
     })
+
+    if (shouldFail) {
+      sendJobFailureAlert(job.type, jobId, error).catch(() => {})
+    }
   } catch (e) {
     console.error("[Queue] markFailed error:", e)
   }

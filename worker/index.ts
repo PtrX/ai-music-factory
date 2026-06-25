@@ -715,13 +715,15 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
   try {
     const { sendVideoReadyCard } = await import("@/lib/telegram")
     const thumbExists = await fs.access(thumbnailPath).then(() => true).catch(() => false)
+    const otherReadyCount = await prisma.videoJob.count({ where: { status: "ready", id: { not: videoJobId } } })
     await sendVideoReadyCard(
       { id: videoJobId },
       { versionName: track.versionName, id: track.id },
       { title: project.title, id: project.id },
       thumbExists ? thumbnailPath : undefined,
       previewExists ? previewPath : undefined,
-      { width: 960, height: 540 }
+      { width: 960, height: 540 },
+      otherReadyCount
     )
   } catch (e) {
     console.warn("[Worker] Telegram video ready card skipped:", (e as Error).message)

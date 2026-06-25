@@ -136,26 +136,54 @@ export async function editMessageReplyMarkup(
   }
 }
 
+export async function sendJobFailureAlert(
+  type: string,
+  jobId: string,
+  error: string
+): Promise<void> {
+  if (!BOT_TOKEN || !CHAT_ID) return
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
+  const short = error.slice(0, 120).replace(/\n/g, " ")
+  const text =
+    `⚠️ *Job permanent fehlgeschlagen*\n\n` +
+    `Typ: \`${type}\`\n` +
+    `Fehler: ${short}\n\n` +
+    `[Settings öffnen](${appUrl}/settings)`
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: "Markdown", disable_web_page_preview: true }),
+    })
+  } catch (err) {
+    console.error("[Telegram] sendJobFailureAlert failed:", err)
+  }
+}
+
 export async function sendVideoReadyCard(
   videoJob: { id: string },
   track: { versionName: string | null; id: string },
   project: { title: string; id: string },
   thumbnailPath?: string,
   previewVideoPath?: string,
-  previewDims?: { width: number; height: number }
+  previewDims?: { width: number; height: number },
+  otherReadyCount?: number
 ): Promise<void> {
   if (!BOT_TOKEN || !CHAT_ID) return
 
   const version = track.versionName || "Original Mix"
   const text = `🎬 *Video bereit zur Freigabe*\n\n*${escapeMarkdown(project.title)} — ${escapeMarkdown(version)}*\n\nDas Video wurde gerendert und wartet auf deine Freigabe.`
 
-  const keyboard = {
-    inline_keyboard: [[
-      { text: "✅ Zu YouTube hochladen", callback_data: `video_approve_${videoJob.id}` },
-      { text: "❌ Verwerfen", callback_data: `video_reject_${videoJob.id}` },
-    ], [
-      { text: "🔄 Neu rendern", callback_data: `video_rerender_${videoJob.id}` },
-    ]],
+  const approveRow = [
+    { text: "✅ Zu YouTube hochladen", callback_data: `video_approve_${videoJob.id}` },
+    { text: "❌ Verwerfen", callback_data: `video_reject_${videoJob.id}` },
+  ]
+  const rerenderRow = [{ text: "🔄 Neu rendern", callback_data: `video_rerender_${videoJob.id}` }]
+  const keyboard = { inline_keyboard: [approveRow, rerenderRow] }
+  if (otherReadyCount && otherReadyCount > 0) {
+    keyboard.inline_keyboard.push([
+      { text: `✅ Alle ${otherReadyCount + 1} freigeben`, callback_data: "video_approve_all" },
+    ])
   }
 
   // Preferred: send a PLAYABLE video with the approval buttons attached.
