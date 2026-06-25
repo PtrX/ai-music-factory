@@ -73,10 +73,17 @@ function buildQuery(
   visualTrack: string,
   subjectIndex: number,
   directiveIndex: number,
-  energyWord: string
+  energyWord: string,
+  extraKeywords: string[] = []
 ): string {
   const subjects = SUBJECTS[visualTrack] ?? SUBJECTS["nature-epic"]
-  const subject = subjects[subjectIndex % subjects.length]
+  // Every 4th directive, inject an extraKeyword as the subject for variety
+  let subject: string
+  if (extraKeywords.length > 0 && directiveIndex % 4 === 3) {
+    subject = extraKeywords[(subjectIndex) % extraKeywords.length]
+  } else {
+    subject = subjects[subjectIndex % subjects.length]
+  }
   const perspective = PERSPECTIVES[(directiveIndex * 3) % PERSPECTIVES.length]
   const movement = MOVEMENTS[(directiveIndex * 7) % MOVEMENTS.length]
 
@@ -111,7 +118,8 @@ export function buildDirectives(
   identity: ArtistIdentityData,
   _projectGenre: string,
   audioDurationSec?: number,
-  introOffsetSec = 0
+  introOffsetSec = 0,
+  extraKeywords: string[] = []
 ): VisualDirective[] {
   const beatTimes: number[] = (structure as any).beatTimes ?? []
   const beatStrength: number[] = (structure as any).beatStrength ?? []
@@ -186,7 +194,7 @@ export function buildDirectives(
     section: { type: string }
   ): VisualDirective => {
     const clipDurationSec = Math.max(endSec - startSec, 0.5)
-    const query = buildQuery(vt, globalIdx, globalIdx, energyWord[effectiveEnergy] || "")
+    const query = buildQuery(vt, globalIdx, globalIdx, energyWord[effectiveEnergy] || "", extraKeywords)
     globalIdx++
     return {
       startSec, endSec, type: section.type, energy: effectiveEnergy, clipDurationSec,

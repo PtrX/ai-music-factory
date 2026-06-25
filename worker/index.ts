@@ -644,11 +644,25 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     } catch { /* no offset if probe fails */ }
   }
 
-  const directives = buildDirectives(structure, identityData, project.genre, audioDur, introOffsetSec)
+  // Derive a stable numeric seed from the track ID for clip page variation
+  const trackSeed = track.id.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 0)
+
+  // Extract content keywords from project metadata to diversify clip queries
+  const stopWords = new Set(["the","and","for","with","from","this","that","are","was","mix","version","edit","feat","remix","original"])
+  const extraKeywords = [project.title, project.vibe ?? "", project.mood, project.genre, track.versionName ?? ""]
+    .join(" ")
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !stopWords.has(w))
+    .filter((w, i, arr) => arr.indexOf(w) === i)
+    .slice(0, 10)
+
+  const directives = buildDirectives(structure, identityData, project.genre, audioDur, introOffsetSec, extraKeywords)
 
   // Build a pool of 60+ unique clips upfront, then assign cyclically
   const targetPoolSize = Math.max(60, Math.ceil(audioDur / 3))
-  const pool = await buildClipPool(directives, targetPoolSize, project.id)
+  const pool = await buildClipPool(directives, targetPoolSize, project.id, trackSeed)
 
   const clips = new Map<number, import("@/lib/clip-library").ClipResult>()
   if (pool.length > 0) {

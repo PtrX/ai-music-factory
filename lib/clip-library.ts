@@ -204,7 +204,8 @@ export async function findClipForDirective(
 export async function buildClipPool(
   directives: VisualDirective[],
   targetCount: number,
-  _projectId: string
+  _projectId: string,
+  trackSeed = 0
 ): Promise<ClipResult[]> {
   // Collect unique queries from directives
   const uniqueQueries = [...new Set(directives.map(d => d.searchQuery))]
@@ -213,10 +214,11 @@ export async function buildClipPool(
   const pool: ClipResult[] = []
   const seenIds = new Set<string>()
 
-  // Download clips in batches per query — vary the page to get different results
+  // Download clips in batches per query — vary the page using trackSeed so
+  // different tracks with the same genre don't always pull identical clips.
   for (let qi = 0; qi < uniqueQueries.length && pool.length < targetCount; qi++) {
     const query = uniqueQueries[qi]
-    const page = (qi % 3) + 1 // rotate pages 1, 2, 3
+    const page = ((qi + Math.abs(trackSeed)) % 5) + 1 // pages 1–5, offset per track
     const candidates = await searchPexelsMany(query, minDur, 4, page)
 
     for (const found of candidates) {
