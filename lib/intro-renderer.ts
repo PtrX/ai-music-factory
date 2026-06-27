@@ -1,7 +1,7 @@
 import * as fs from "fs/promises"
+import * as os from "os"
 import * as path from "path"
 import { execSync } from "child_process"
-import { createStorageTempDir } from "./storage"
 
 export const INTRO_CREDIT = "AI Music Factory by PTRX"
 export const HYPERFRAMES_RENDER_TIMEOUT_MS = 900_000
@@ -18,7 +18,8 @@ export interface IntroRenderInput {
 export async function renderIntro(input: IntroRenderInput): Promise<string> {
   const { title, version, accentColor, backgroundClipPath, introDurationSec, outputPath } = input
 
-  const tmpDir = await createStorageTempDir("hf-intro")
+  // Use local /tmp (not NAS) — Chrome profile + ffmpeg I/O on NFS causes ETIMEDOUT
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "hf-intro-"))
   const tempEnv = { ...process.env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir }
 
   try {
@@ -53,13 +54,16 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
       { timeout: 60_000, stdio: "pipe" }
     )
 
+    // Render intro to local tmp first, then copy to NAS output path
+    const localOutput = path.join(tmpDir, "intro.mp4")
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
     const hfBin = path.join(process.cwd(), "node_modules", ".bin", "hyperframes")
     execSync(
-      `"${hfBin}" render --output "${outputPath}"`,
+      `"${hfBin}" render --output "${localOutput}"`,
       { cwd: tmpDir, env: tempEnv, timeout: HYPERFRAMES_RENDER_TIMEOUT_MS, stdio: "pipe" }
     )
 
+    await fs.copyFile(localOutput, outputPath)
     return outputPath
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {})
