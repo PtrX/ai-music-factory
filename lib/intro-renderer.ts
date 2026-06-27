@@ -54,8 +54,9 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
     )
 
     await fs.mkdir(path.dirname(outputPath), { recursive: true })
+    const hfBin = path.join(process.cwd(), "node_modules", ".bin", "hyperframes")
     execSync(
-      `npx hyperframes render --output "${outputPath}"`,
+      `"${hfBin}" render --output "${outputPath}"`,
       { cwd: tmpDir, env: tempEnv, timeout: HYPERFRAMES_RENDER_TIMEOUT_MS, stdio: "pipe" }
     )
 
