@@ -46,12 +46,16 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
     const templateDir = path.join(process.cwd(), "templates", "hf-template")
     await fs.copyFile(path.join(templateDir, "gsap.min.js"), path.join(tmpDir, "gsap.min.js"))
 
+    // Copy source clip from NAS to local /tmp first to avoid NFS read latency in ffmpeg
+    const srcLocal = path.join(tmpDir, "src.mp4")
+    await fs.copyFile(backgroundClipPath, srcLocal)
+
     // Re-encode bg clip with dense keyframes (required by HyperFrames for seek)
     const bgPath = path.join(tmpDir, "bg.mp4")
     execSync(
-      `ffmpeg -y -i "${backgroundClipPath}" -t ${dur + 1} ` +
+      `ffmpeg -y -i "${srcLocal}" -t ${dur + 1} ` +
       `-c:v libx264 -r 30 -g 30 -keyint_min 30 -movflags +faststart -an "${bgPath}"`,
-      { timeout: 60_000, stdio: "pipe" }
+      { timeout: 120_000, stdio: "pipe" }
     )
 
     // Render intro to local tmp first, then copy to NAS output path
