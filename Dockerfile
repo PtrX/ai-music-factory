@@ -8,7 +8,7 @@ WORKDIR /app
 # System deps: ffmpeg (render), python3 + venv (librosa beat analysis, whisper
 # captions). git is occasionally needed by npx tooling.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg python3 python3-venv python3-pip python3-setuptools git ca-certificates \
+      ffmpeg python3 python3-venv python3-pip python3-setuptools python3-pil git ca-certificates \
       build-essential gcc g++ libsndfile1 \
       libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
       libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
