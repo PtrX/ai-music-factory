@@ -1,87 +1,68 @@
 # HANDOFF — AI Music Factory
-_Stand: 2026-06-24 abend_
+_Stand: 2026-07-01_
 
 > Zuerst lesen: `BEATS2YOUTUBE_CHECKLIST.md`.
 
-## Was diese Session gemacht hat
+## Was seit dem letzten Handoff (2026-06-24) passiert ist
 
-### QA-Durchlauf und Fixes
+### Intro-Rendering komplett umgebaut (2026-06-27/28)
 
-Mehrere unabhängige QA-Scans wurden durchgeführt: Frontend Null-Safety, API-Routes, Worker/Queue, LLM-Generatoren, TypeScript/Build.
+Hyperframes/Puppeteer-Chrome ist raus, ersetzt durch **Python PIL + ffmpeg**:
+- Grund: SwiftShader (Software-WebGL, kein GPU in der LXC) brauchte 15+ Minuten für einen 5s-Intro.
+- PIL rendert Text/Scrim-Overlay als transparentes PNG in ~0.1s, ffmpeg komponiert in ~2s — kein Chrome mehr nötig.
+- `Dockerfile` installiert jetzt `python3-pil`.
+- Mehrere ETIMEDOUT-Fixes davor: NAS-Clip erst nach lokal `/tmp` kopieren, dann ffmpeg (NFS-Latenz killte den 60s-Timeout).
+- Siehe Memory `no-hyperframes`.
 
-Gefixt:
+### Overnight-Batch-Script (2026-06-29, `scripts/overnight-batch.ts`)
 
-- **Intro-Render Timeout**: `lib/intro-renderer.ts` Hyperframes-Timeout von `180_000` auf `480_000` erhöht.
-- **Dashboard Mini-Player**:
-  - `app/api/projects/route.ts` gibt pro Track `audioUrl` zurück.
-  - `lib/storage/index.ts` hat jetzt `projectFileUrl(...)` für sichere `/api/audio/...` URLs.
-  - `app/(dashboard)/page.tsx` nutzt ein shared `<audio>` Element; nur ein Track spielt gleichzeitig.
-  - Dashboard normalisiert `projects[].variants` und `variants[].tracks`, damit malformed API-Shapes nicht crashen.
-- **Worker/Queue-Stabilität**:
-  - `intro_render`, `video_render` und erfolgreicher `youtube_upload` markieren Jobs jetzt mit `markDone(...)`.
-  - Telegram-Karten nach erfolgreicher Musik-/Video-/YouTube-Erzeugung sind best-effort und lassen fertige Jobs nicht nachträglich fehlschlagen.
-  - `markFailed(...)` überschreibt nur noch Jobs im Status `processing`.
-  - Worker-Startup setzt bei fatalem Fehler jetzt Exit-Code 1.
-- **Cover-Prompt Generator**:
-  - `generateCoverPrompt(...)` nutzt 1024 statt 512 Tokens. Root Cause aus lokalem E2E: Gemini stoppte den Cover-Prompt dreimal mit `MAX_TOKENS`.
-- **Frontend Robustheit**:
-  - Projekt-Detailseite normalisiert `project.variants` und Track-Responses.
-  - Bulk-`generate-music` markiert nur erfolgreiche Starts als queued.
-  - Lyrics-/Prompt-Speichern zeigt API-Fehler jetzt im UI-Error-State.
-  - Preset-Liste im Projektformular wird nur als Array übernommen.
-- **API-Routes**:
-  - `PATCH /api/projects/[id]` validiert `bpm` und `variantCount` auf NaN und gibt 400 statt Prisma-500 zurück.
-  - `PATCH /api/projects/[id]` und `PATCH /api/tracks/[id]/favorite` geben bei fehlenden IDs 404 statt 500 zurück.
-  - `GET /api/variants/[id]/tracks` gibt bei unbekannter Variant 404 statt `200 { tracks: [] }`.
-  - Normale und externe Project-Create-Routes retryen Slug-Unique-Konflikte (`P2002`) mit Suffix statt Race-Condition-500.
+Legt für Tracks ohne Video automatisch `intro_render`-Jobs an, pollt und approved fertige Videos automatisch (`youtube_upload`), meldet Fortschritt via Telegram. Gedacht zum Laufenlassen über Nacht ohne manuelle Freigabe pro Video — Vorsicht: YouTube-Upload ist `public`, siehe „DARF NICHT" in der Checklist.
 
-## Verifikation
+**Fix heute (2026-07-01)**: Die Query für „Tracks ohne Video" nutzte `audioPath: { not: null }` — `audioPath` ist aber ein nicht-nullable String (Default `""`), der Filter griff also nie. Jetzt `not: ""`. (Commit a517e5a)
 
-Ausgeführt und erfolgreich:
+### Preset-Audio-Upload-Bug gefixt (2026-07-01)
 
-```bash
-npx tsx tests/storage-url.test.ts
-npm run typecheck
-for f in tests/*.test.ts; do npx tsx "$f" || exit 1; done
-npm run build
-```
+Der von Peter gemeldete Bug „Preset-Upload funktioniert nicht, weder Drag & Drop noch Button" war real:
+- **Root Cause 1**: `components/preset-upload-dialog.tsx` hatte trotz UI-Text „Drop audio file here" **keine** `onDrop`/`onDragOver`-Handler — Drag & Drop war nie verdrahtet. Gefixt nach dem Pattern aus `upload-variants-modal.tsx`.
+- **Root Cause 2**: Click-to-Browse und der Upload-Button funktionierten technisch (verifiziert), aber Analyse-Fehler kamen nur als generisches `"Analysis failed"` beim User an — ohne Detail, ob es an librosa, fehlendem API-Key oder der KI-Anfrage lag. `lib/preset-analyzer.ts` wirft jetzt spezifische Errors, die Route gibt sie durch.
+- Browser-verifiziert: Drag&Drop setzt die Datei, Upload-Button feuert den Request, Fehler sind jetzt lesbar im UI.
+- **Nicht ausschließbar**: Ob der Klick-auf-Button-Pfad in Peters echtem Browser/Produktivumgebung ebenfalls betroffen war, konnte nur headless getestet werden (nativer OS-Dateidialog nicht vollständig automatisierbar). Falls der Button bei Peter weiterhin nichts tut, live debuggen. (Commit b3e5390)
 
-Build lief vollständig ohne `head`; Exit-Code 0.
+### Browser-E2E der Miniplayer-Session (2026-06-24) nachgeholt (2026-07-01)
 
-## E2E-Smoke
-
-Browser-Automation konnte nicht genutzt werden: Browser-Plugin meldete `browser-client is not trusted`.
-
-Stattdessen lokaler HTTP/API-Smoke gegen `http://localhost:3000` mit laufendem Worker:
-
-1. Dashboard `/` lädt mit 200.
-2. Preset `Russian Epic Afro Deep House` gefunden.
-3. Testprojekt erstellt: `QA Miniplayer 2026-06-24T11-41-18-535Z`, API returned 201.
-4. `/api/projects/[id]/generate` returned 200 und queuete 3 Jobs.
-5. Worker verarbeitete Lyrics + Suno-Prompt erfolgreich.
-6. Cover-Prompt scheiterte zuerst mit `MAX_TOKENS`; nach Fix + Worker-Neustart + Job-Reset erfolgreich abgeschlossen.
-7. Projekt-Detail-API liefert `lyricsPath`, `sunoPromptPath`, `_lyrics`, `_sunoPrompt`, `negativePrompt`.
-8. Dashboard-Response liefert Track-Arrays defensiv und bestehende Tracks mit `audioUrl`.
-9. `/api/audio/...` Range-Request auf bestehendem Track returned 206 `audio/mpeg`.
-
-Nicht per Browser verifiziert: Clipboard-Button, Rating-Slider, Favorite-Klick und sichtbarer Mini-Player-Button. API/Build/Typecheck decken die geänderten Pfade ab, aber ein echter Browser-E2E steht noch aus.
+Alle vier damals ungetesteten Features jetzt im Browser verifiziert und funktionieren:
+- Mini-Player Play/Pause (ein `<audio>`-Element, kein Doppel-Playback)
+- Favorite-Klick (`PATCH /api/tracks/[id]/favorite`)
+- Copy-Button (Clipboard-API + `execCommand`-Fallback, State wechselt zu „Copied!")
+- Rating-Slider (`PATCH /api/tracks/[id]/rating`, State-Handling korrekt — kein Datenverlust bei anderen Score-Dimensionen)
 
 ## Aktueller Systemstand
 
-- **Branch**: `main`
-- **Lokal**: Next dev server und Worker wurden für den E2E-Smoke gestartet.
-- **Produktion**: CT 100 läuft weiterhin Docker Compose; nach Code-Änderungen muss Image neu gebaut werden.
+- **Branch**: `main`, alle Änderungen committed.
+- **Nicht gepusht/deployed**: die heutigen Commits (a517e5a, b3e5390) sind lokal, noch nicht auf CT 100.
+- **Produktion**: CT 100 läuft Docker Compose; nach Code-Änderungen Image neu bauen (siehe Deploy-Befehl unten).
 - **CT 100 RAM**: 10240 MB.
+
+## Bekannte offene Punkte
+
+### 1. Kaputter Test (vorbestehend, nicht kritisch)
+
+`tests/intro-renderer.test.ts` referenziert `HYPERFRAMES_RENDER_TIMEOUT_MS`, das beim Hyperframes→PIL-Umbau (`0c02cc1`) aus `lib/intro-renderer.ts` entfernt wurde. `npm run typecheck` schlägt deswegen fehl. Test an neue PIL-Pipeline anpassen oder entfernen.
+
+### 2. Aus der Checklist (`BEATS2YOUTUBE_CHECKLIST.md`)
+
+- Kein SRT/Untertitel für generierte Suno-Tracks (nur bei importierten Tracks via Whisper).
+- YouTube-Token hat nur `youtube.upload`-Scope; für Caption-Upload (`captions.insert`) bräuchte es `youtube.force-ssl` — Re-Auth nötig.
+- `detectImpactBeats` in `visual-director.ts` ist toter Code.
+- Clip-Pool (80) < Directives (~150) → sichtbare Wiederholungen; Pixabay als 2. Quelle wäre ein Fix.
+- Kein Re-Encode-Skip (`-c copy`) wenn keine Untertitel gebrannt werden.
+- Kein globales Job-Timeout pro Worker-Job, keine Payload-Validierung im Worker, kein gezielter Retry für 429/5xx im LLM-Client.
 
 ## Nächste Schritte
 
 ### 1. Commit, Push, Deploy
 
-Nach Abschluss dieser Session committen, pushen und deployen:
-
 ```bash
-git add app components lib worker tests HANDOFF.md
-git commit -m "Fix dashboard player and QA stability issues"
 git push
 
 cd "/Users/peter/claude_code/AI Music Factory" && \
@@ -91,44 +72,13 @@ cd "/Users/peter/claude_code/AI Music Factory" && \
     pct exec 100 -- bash -c 'cd /opt/amf && tar xzf /tmp/amf-code.tar.gz && docker compose build web worker telegram-poller && docker compose up -d'"
 ```
 
-Danach fehlgeschlagene Intro-/Videojobs zurücksetzen, falls nötig:
+### 2. `intro-renderer.test.ts` reparieren oder löschen
 
-```sql
-UPDATE "Job" SET status='pending', attempts=0, "lastError"=NULL
-WHERE type='intro_render' AND status='failed';
-UPDATE "VideoJob" SET status='pending', "errorMessage"=NULL WHERE status='failed';
-```
+Referenziert einen Export, der nicht mehr existiert. Blockiert aktuell `npm run typecheck`.
 
-### 2. Browser-E2E nachholen
+### 3. Kleinere QA/Cleanup-Punkte (niedrige Priorität)
 
-Sobald Browser-Automation wieder nutzbar ist oder manuell im Browser:
-
-- Dashboard lädt.
-- Projekt anlegen mit Preset.
-- Generate All Variants.
-- Tabs zeigen Lyrics + Suno Prompt.
-- Copy-Button landet in Clipboard.
-- Rating speichern.
-- Favorite setzen.
-- Dashboard zeigt Score und Mini-Player-Button bei Tracks mit Audio.
-
-### 3. Preset-Audio-Upload-Bug
-
-Peter hat gemeldet: Beim Upload von Presets funktioniert der Audiodatei-Upload nicht, weder Drag & Drop noch Button.
-
-Das ist bewusst **noch nicht gefixt**. Als nächstes nach Mini-Player/QA untersuchen:
-
-- UI: Preset-Upload-Komponente / Dateiinput / Dropzone-Handler.
-- API: `app/api/presets/from-audio`.
-- Prüfen, ob Button keinen `input.click()` triggert oder ob FormData/API scheitert.
-
-### 4. Weitere offene QA-Findings
-
-- LLM-Client hat noch keinen gezielten Retry für Netzwerk/429/5xx.
-- `GEMINI_API_KEY` / `OPENROUTER_API_KEY` sollten zentral getrimmt werden; `.env.example` und README auf aktuellen Gemini-primär/OpenRouter-Fallback-Stand bringen.
-- Externe API-Routes sollten noch konsistente Top-Level-`try/catch` JSON-500s bekommen.
-- Globales Job-Timeout pro Worker-Job fehlt weiterhin.
-- Payload-Parsing im Worker ist noch nicht typisiert/validiert.
+Siehe „Bekannte offene Punkte" oben — keine davon blockiert aktuell einen User-Workflow.
 
 ## Gotchas
 
@@ -142,7 +92,7 @@ Das ist bewusst **noch nicht gefixt**. Als nächstes nach Mini-Player/QA untersu
 | force-dynamic | Alle API-Routes haben `export const dynamic = "force-dynamic"` |
 | VideoJob "ready" | Status `"ready"` = Freigabe, nicht `"done"` |
 | tsx im Docker | Code ist ins Image gebacken. Immer rebuild, nicht nur restart. |
-| Intro-Render | hyperframes Chrome braucht > 300s; Timeout ist jetzt 480s |
-| CT 100 RAM | 10240 MB — wichtig wegen hyperframes `LOW_MEMORY_TOTAL_MB_THRESHOLD=8192` |
+| Intro-Render | Jetzt PIL + ffmpeg statt Hyperframes/Chrome — siehe Memory `no-hyperframes` |
+| CT 100 RAM | 10240 MB |
 | Disk CT 100 | 30 GB; nach mehreren Rebuilds: `docker builder prune -f` |
-| Browser-Automation | In dieser Session blockiert: `browser-client is not trusted` |
+| Preset-Audio-Upload | Analyse-Fehler jetzt mit Detail im UI sichtbar (librosa vs. API-Key vs. KI-Call) |
