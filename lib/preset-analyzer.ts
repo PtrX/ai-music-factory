@@ -137,56 +137,53 @@ async function callAI(audioFilePath: string, prompt: string): Promise<Record<str
   return null
 }
 
-export async function analyzeAudioForPreset(filePath: string): Promise<PresetAnalysis | null> {
-  try {
-    const librosaData = await analyzeAudioLocally(filePath)
-    if (!librosaData) {
-      console.error("[Preset] Librosa analysis failed")
-      return null
-    }
-
-    const prompt = buildStylePrompt(librosaData)
-    const raw = await callAI(filePath, prompt)
-    if (!raw) {
-      console.error("[Preset] AI analysis returned null")
-      return null
-    }
-
-    const instruments = raw.instruments
-      ? (Array.isArray(raw.instruments) ? raw.instruments : [String(raw.instruments)])
-      : []
-    const similarArtists = raw.similarArtists
-      ? (Array.isArray(raw.similarArtists) ? raw.similarArtists : [String(raw.similarArtists)])
-      : []
-
-    const analysis: PresetAnalysis = {
-      name: String(raw.name || "Unknown"),
-      genre: String(raw.genre || ""),
-      subgenre: raw.subgenre ? String(raw.subgenre) : null,
-      mood: String(raw.mood || ""),
-      vibe: String(raw.vibe || ""),
-      energy: String(raw.energy || "medium"),
-      bpm: Math.round(librosaData.bpm),
-      bpmRange: raw.bpmRange ? String(raw.bpmRange) : null,
-      keySignature: librosaData.key,
-      language: String(raw.language || "instrumental"),
-      vocalType: raw.vocalType ? String(raw.vocalType) : null,
-      sunoStyle: String(raw.sunoStyle || `${librosaData.bpm} BPM, ${librosaData.key}`),
-      negativePrompt: String(raw.negativePrompt || ""),
-      instruments,
-      productionStyle: String(raw.productionStyle || ""),
-      similarArtists,
-      structureJson: JSON.stringify({
-        duration: librosaData.duration,
-        bpm: librosaData.bpm,
-        key: librosaData.key,
-        sections: librosaData.sections,
-      }),
-    }
-
-    return analysis
-  } catch (err) {
-    console.error("[Preset] Analysis failed:", err instanceof Error ? err.message : err)
-    return null
+export async function analyzeAudioForPreset(filePath: string): Promise<PresetAnalysis> {
+  const librosaData = await analyzeAudioLocally(filePath)
+  if (!librosaData) {
+    throw new Error("Librosa audio analysis failed (see server logs for the underlying error)")
   }
+
+  const prompt = buildStylePrompt(librosaData)
+  const raw = await callAI(filePath, prompt)
+  if (!raw) {
+    throw new Error(
+      process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY
+        ? "AI style analysis failed (see server logs for the underlying error)"
+        : "No GEMINI_API_KEY or OPENROUTER_API_KEY configured"
+    )
+  }
+
+  const instruments = raw.instruments
+    ? (Array.isArray(raw.instruments) ? raw.instruments : [String(raw.instruments)])
+    : []
+  const similarArtists = raw.similarArtists
+    ? (Array.isArray(raw.similarArtists) ? raw.similarArtists : [String(raw.similarArtists)])
+    : []
+
+  const analysis: PresetAnalysis = {
+    name: String(raw.name || "Unknown"),
+    genre: String(raw.genre || ""),
+    subgenre: raw.subgenre ? String(raw.subgenre) : null,
+    mood: String(raw.mood || ""),
+    vibe: String(raw.vibe || ""),
+    energy: String(raw.energy || "medium"),
+    bpm: Math.round(librosaData.bpm),
+    bpmRange: raw.bpmRange ? String(raw.bpmRange) : null,
+    keySignature: librosaData.key,
+    language: String(raw.language || "instrumental"),
+    vocalType: raw.vocalType ? String(raw.vocalType) : null,
+    sunoStyle: String(raw.sunoStyle || `${librosaData.bpm} BPM, ${librosaData.key}`),
+    negativePrompt: String(raw.negativePrompt || ""),
+    instruments,
+    productionStyle: String(raw.productionStyle || ""),
+    similarArtists,
+    structureJson: JSON.stringify({
+      duration: librosaData.duration,
+      bpm: librosaData.bpm,
+      key: librosaData.key,
+      sections: librosaData.sections,
+    }),
+  }
+
+  return analysis
 }

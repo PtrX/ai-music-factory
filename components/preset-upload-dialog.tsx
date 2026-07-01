@@ -28,6 +28,7 @@ export function PresetUploadDialog({ onCreated }: { onCreated?: () => void }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<PresetResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleUpload = async () => {
@@ -82,8 +83,21 @@ export function PresetUploadDialog({ onCreated }: { onCreated?: () => void }) {
         {!analyzing && !result && (
           <div className="space-y-4">
             <div
-              className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:bg-muted/50"
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                dragging ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+              }`}
               onClick={() => inputRef.current?.click()}
+              onDragOver={(event) => {
+                event.preventDefault()
+                setDragging(true)
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(event) => {
+                event.preventDefault()
+                setDragging(false)
+                const dropped = event.dataTransfer.files?.[0]
+                if (dropped) setFile(dropped)
+              }}
             >
               {file ? (
                 <p className="text-sm font-medium">{file.name}</p>

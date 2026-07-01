@@ -30,9 +30,13 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer())
     await fs.writeFile(filePath, buffer)
 
-    const analysis = await analyzeAudioForPreset(filePath)
-    if (!analysis) {
-      return NextResponse.json({ error: "Analysis failed" }, { status: 500 })
+    let analysis
+    try {
+      analysis = await analyzeAudioForPreset(filePath)
+    } catch (analysisError) {
+      const message = analysisError instanceof Error ? analysisError.message : "Analysis failed"
+      console.error("Preset audio analysis error:", analysisError)
+      return NextResponse.json({ error: message, code: "ANALYSIS_ERROR" }, { status: 500 })
     }
 
     const preset = await prisma.preset.create({
