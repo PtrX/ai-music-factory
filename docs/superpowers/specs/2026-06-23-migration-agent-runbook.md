@@ -71,7 +71,7 @@ Schritte durch und schaltet auf Produktion um.
   sed -i '/^DATABASE_URL=/d' .env
   # Setze Proxmox-spezifische Werte
   cat >> .env << 'EOF'
-  POSTGRES_PASSWORD=AMF_Pr0xm0x_2026!
+  POSTGRES_PASSWORD=<POSTGRES_PASSWORD>
   STORAGE_DIR=/mnt/nas/amf-storage
   NEXT_PUBLIC_APP_URL=http://192.168.1.31:3000
   EOF
@@ -121,7 +121,7 @@ Schritte durch und schaltet auf Produktion um.
 
 - [ ] **4.2** Prisma-Schema auf Postgres deployen:
   ```bash
-  ssh root@192.168.1.31 "cd /opt/amf && docker compose run --rm web sh -c 'DATABASE_URL=postgresql://amf:AMF_Pr0xm0x_2026!@db:5432/amf npx prisma migrate deploy'"
+  ssh root@192.168.1.31 "cd /opt/amf && docker compose run --rm web sh -c 'DATABASE_URL=postgresql://amf:<POSTGRES_PASSWORD>@db:5432/amf npx prisma migrate deploy'"
   ```
 
 - [ ] **4.3** SQLite → Postgres migrieren via pgloader:
@@ -134,7 +134,7 @@ Schritte durch und schaltet auf Produktion um.
   cat > /tmp/amf-migration.load << 'EOF'
   LOAD DATABASE
     FROM sqlite:///opt/amf/prisma/dev.db
-    INTO postgresql://amf:AMF_Pr0xm0x_2026!@127.0.0.1:5432/amf
+    INTO postgresql://amf:<POSTGRES_PASSWORD>@127.0.0.1:5432/amf
   WITH include drop, create tables, create indexes, reset sequences
   SET work_mem to '128MB', maintenance_work_mem to '512MB'
   EXCLUDING TABLE NAMES MATCHING '_prisma_migrations';
@@ -156,7 +156,7 @@ Schritte durch und schaltet auf Produktion um.
 
   **Fallback falls pgloader nicht klappt** (Prisma db push + manuelles Seed):
   ```bash
-  ssh root@192.168.1.31 "cd /opt/amf && docker compose run --rm web sh -c 'DATABASE_URL=postgresql://amf:AMF_Pr0xm0x_2026!@db:5432/amf npx prisma db push'"
+  ssh root@192.168.1.31 "cd /opt/amf && docker compose run --rm web sh -c 'DATABASE_URL=postgresql://amf:<POSTGRES_PASSWORD>@db:5432/amf npx prisma db push'"
   ```
 
 - [ ] **4.4** Datenmenge prüfen:
@@ -236,4 +236,4 @@ Nach erfolgreichem Abschluss:
 - **Build-Zeit**: librosa + whisper ziehen ~2GB Python-Pakete. 20+ Min normal.
 - **_prisma_migrations Tabelle**: pgloader excluded sie (`EXCLUDING TABLE NAMES MATCHING '_prisma_migrations'`), Prisma schreibt die eigene History nach `migrate deploy`.
 - **STORAGE_DIR**: Muss im CT 100 als echter Pfad existieren (`/mnt/nas/amf-storage` via Bind-Mount von LXC-Config). Docker kann es sonst nicht mounten.
-- **Postgres PW** in dieser Datei: `AMF_Pr0xm0x_2026!` — nur intern, nie öffentlich.
+- **Postgres PW**: nur in `.env` auf CT 100 (nicht in diesem Dokument), nie committen oder öffentlich teilen.
