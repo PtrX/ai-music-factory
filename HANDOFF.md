@@ -5,6 +5,16 @@ _Stand: 2026-07-01_
 
 ## Was seit dem letzten Handoff (2026-06-24) passiert ist
 
+### Repo öffentlich gemacht + Postgres-Passwort rotiert (2026-07-01)
+
+Vor der Veröffentlichung eines Promo-Shorts sollte das GitHub-Repo public werden. Sicherheits-Scan davor fand ein im Klartext committetes Produktions-Postgres-Passwort in `docs/superpowers/specs/2026-06-23-migration-agent-runbook.md` (aktueller `main`-Branch, nicht nur alte Historie).
+
+- Datei bereinigt, Passwort durch Platzhalter ersetzt (Commit `6c2a87f`).
+- Passwort in Produktion rotiert: `.env` auf CT 100 aktualisiert, `ALTER USER amf WITH PASSWORD ...` in Postgres, `docker compose up -d web worker telegram-poller` (alle Container neugestartet, DB dabei ebenfalls recreated).
+- Verifiziert: `/api/projects` → 200, keine Fehler in Web-/Worker-Logs. Kein spürbarer Ausfall.
+- Repo ist seit 2026-07-01 öffentlich: `github.com/PtrX/ai-music-factory`. Alter (jetzt wertloser) Passwort-Wert bleibt in der Git-Historie sichtbar — Historie wurde bewusst nicht umgeschrieben (kein Force-Push nötig, da Rotation die Exposition entschärft).
+- **Falls nochmal ein Repo public geht:** vorher IMMER `git log --all -p | grep -i password` (oder ähnlich) laufen lassen, nicht nur den aktuellen Working Tree prüfen.
+
 ### Intro-Rendering komplett umgebaut (2026-06-27/28)
 
 Hyperframes/Puppeteer-Chrome ist raus, ersetzt durch **Python PIL + ffmpeg**:
