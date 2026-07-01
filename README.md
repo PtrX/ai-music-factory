@@ -2,6 +2,8 @@
 
 A self-hosted, AI-powered music production pipeline. Feed it a brief (lyrics, mood, genre, BPM) and it generates multiple song variants via Suno AI, scores them automatically with a Gemini-based critic, transcribes lyrics with Whisper, and assembles polished videos for YouTube.
 
+> **Scope note:** this is a single-user personal tool with no authentication layer — any API route that serves a file (e.g. `/api/audio/...`) is reachable by anyone who can reach the server. It's built to run on a trusted local/private network (home server, VPN, Docker on `localhost`), not to be exposed directly to the public internet. Add your own auth/reverse-proxy layer if you deploy it somewhere reachable from outside.
+
 ## Features
 
 - **Project-based workflow** — organize songs into projects with variants (A/B/...) and multiple tracks per variant
