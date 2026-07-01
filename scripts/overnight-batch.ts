@@ -17,7 +17,7 @@ async function createMissingJobs(): Promise<number> {
   // Tracks with audio but no active/done VideoJob
   const tracks = await prisma.track.findMany({
     where: {
-      audioPath: { not: null },
+      audioPath: { not: "" },
       videoJobs: {
         none: {
           status: { in: ["pending", "queued", "rendering", "approved", "uploading", "done", "ready"] },
