@@ -1,6 +1,8 @@
-import { Suspense } from "react"
-import { unstable_noStore as noStore } from "next/cache"
-import { getSystemStatus, type ServiceStatus } from "@/lib/system-status"
+"use client"
+
+import { useEffect, useState } from "react"
+import type { ServiceStatus } from "@/lib/system-status"
+import { REFRESH_STATUS_EVENT } from "@/lib/status-refresh"
 
 function Dot({ available }: { available: boolean }) {
   return (
@@ -30,29 +32,6 @@ function ServiceChip({ s }: { s: ServiceStatus }) {
   )
 }
 
-async function StatusBarContent() {
-  noStore()
-  const services = await getSystemStatus()
-
-  const allGroups: { key: ServiceStatus["group"]; items: ServiceStatus[] }[] = [
-    { key: "ai" as const, items: services.filter(s => s.group === "ai") },
-    { key: "video" as const, items: services.filter(s => s.group === "video") },
-    { key: "distribution" as const, items: services.filter(s => s.group === "distribution") },
-  ]
-  const groups = allGroups.filter(g => g.items.length > 0)
-
-  return (
-    <>
-      {groups.map((g, gi) => (
-        <div key={g.key} className="flex items-center gap-2.5">
-          {gi > 0 && <span className="w-px h-3 bg-border" />}
-          {g.items.map(s => <ServiceChip key={s.label} s={s} />)}
-        </div>
-      ))}
-    </>
-  )
-}
-
 function StatusBarSkeleton() {
   return (
     <>
@@ -66,12 +45,54 @@ function StatusBarSkeleton() {
   )
 }
 
+// Fetches once on page load, then ONLY when a credit-consuming action fires
+// REFRESH_STATUS_EVENT (see lib/status-refresh). No polling: the previous
+// server-component version re-ran every provider check (sunoapi, OpenRouter,
+// Higgsfield CLI, Whisper spawn) on EVERY navigation.
 export function StatusBar() {
+  const [services, setServices] = useState<ServiceStatus[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () => {
+      fetch("/api/system/status")
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => {
+          if (!cancelled && Array.isArray(d?.services)) setServices(d.services)
+        })
+        .catch(() => {})
+    }
+    load()
+    window.addEventListener(REFRESH_STATUS_EVENT, load)
+    return () => {
+      cancelled = true
+      window.removeEventListener(REFRESH_STATUS_EVENT, load)
+    }
+  }, [])
+
+  if (!services) {
+    return (
+      <div className="flex items-center gap-3 ml-auto">
+        <StatusBarSkeleton />
+      </div>
+    )
+  }
+
+  const allGroups: { key: ServiceStatus["group"]; items: ServiceStatus[] }[] = [
+    { key: "ai" as const, items: services.filter(s => s.group === "ai") },
+    { key: "video" as const, items: services.filter(s => s.group === "video") },
+    { key: "distribution" as const, items: services.filter(s => s.group === "distribution") },
+  ]
+  const groups = allGroups.filter(g => g.items.length > 0)
+
   return (
     <div className="flex items-center gap-3 ml-auto">
-      <Suspense fallback={<StatusBarSkeleton />}>
-        <StatusBarContent />
-      </Suspense>
+      {groups.map((g, gi) => (
+        <div key={g.key} className="flex items-center gap-2.5">
+          {gi > 0 && <span className="w-px h-3 bg-border" />}
+          {g.items.map(s => <ServiceChip key={s.label} s={s} />)}
+        </div>
+      ))}
     </div>
   )
 }

@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label"
 import { ScorePill } from "@/components/ui/score-pill"
 import { ArrowLeft, Play, Star, Trash2, Pencil, Check, X, Sparkles, Loader2, Film, ThumbsUp, ThumbsDown, ExternalLink, Upload } from "lucide-react"
 import { UploadVariantsModal } from "@/components/upload-variants-modal"
+import { refreshSystemStatus } from "@/lib/status-refresh"
 
 interface Variant {
   id: string
@@ -431,6 +432,7 @@ export default function ProjectDetail() {
           throw new Error(data.error || "Generation failed")
         }
       }
+      refreshSystemStatus()
 
       setTimeout(() => {
         loadProject()
@@ -447,6 +449,7 @@ export default function ProjectDetail() {
     setAnalyzingTrackIds(prev => new Set(prev).add(trackId))
     try {
       await fetch(`/api/tracks/${trackId}/analyze`, { method: "POST" })
+      refreshSystemStatus()
       await loadAllTracks(project.variants ?? [])
     } finally {
       setAnalyzingTrackIds(prev => { const s = new Set(prev); s.delete(trackId); return s })
@@ -511,6 +514,7 @@ export default function ProjectDetail() {
         setError(data.error || "Fehler beim Starten der Musik-Generierung")
       } else {
         setQueuedMusicIds(prev => new Set(prev).add(variantId))
+        refreshSystemStatus()
         loadProject()
       }
     } finally {
@@ -596,6 +600,8 @@ export default function ProjectDetail() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         setError(data.error || "Failed to start video render")
+      } else {
+        refreshSystemStatus()
       }
       loadAllTracks(project?.variants || [])
     } catch (err) {
@@ -617,6 +623,7 @@ export default function ProjectDetail() {
         }
         return
       }
+      refreshSystemStatus()
       loadAllTracks(project?.variants || [])
     } catch {
       setError("Network error while approving video")

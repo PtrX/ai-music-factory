@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, type MouseEvent } from "react"
 import Link from "next/link"
 import { projectGradient } from "@/lib/project-color"
+import { refreshSystemStatus } from "@/lib/status-refresh"
 
 const STATUS_LABEL: Record<string, string> = {
   completed: "fertig",
@@ -191,12 +192,18 @@ export default function Dashboard() {
 
   const approveVideo = async (e: MouseEvent, videoJobId: string) => {
     stop(e); setVideoBusy(videoJobId)
-    try { await fetch(`/api/video-jobs/${videoJobId}/approve`, { method: "POST" }) }
+    try {
+      await fetch(`/api/video-jobs/${videoJobId}/approve`, { method: "POST" })
+      refreshSystemStatus()
+    }
     finally { setVideoBusy(null); fetchProjects() }
   }
   const createVideo = async (e: MouseEvent, trackId: string) => {
     stop(e); setVideoBusy(trackId)
-    try { await fetch(`/api/tracks/${trackId}/render-video`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }) }
+    try {
+      await fetch(`/api/tracks/${trackId}/render-video`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      refreshSystemStatus()
+    }
     finally { setVideoBusy(null); fetchProjects() }
   }
 
