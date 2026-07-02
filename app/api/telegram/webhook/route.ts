@@ -161,14 +161,29 @@ async function handleCallbackQuery(cq: {
     await editMessageReplyMarkup(chatId, messageId)
     await sendTelegramNotification(`❌ Track ${track.index + 1} von *${track.variant.project.title}* abgelehnt.`)
   } else if (action === "video") {
+    // Same status names the worker/web route actually use ("rendering", not "processing")
     const existing = await prisma.videoJob.findFirst({
-      where: { trackId, status: { in: ["queued", "processing"] } },
+      where: { trackId, status: { in: ["queued", "rendering"] } },
     })
     if (existing) {
       await answerCallbackQuery(cq.id, "Video-Job läuft bereits.")
       return
     }
-    await prisma.videoJob.create({ data: { trackId, status: "queued" } })
+    // Mirror the render-video route's preconditions so the worker doesn't fail
+    if (!track.structureJson) {
+      await answerCallbackQuery(cq.id, "Keine Song DNA — erst KI-Analyse ausführen.")
+      return
+    }
+    const aiHigh = (track.aiScoreTotal ?? 0) >= 6
+    const userHigh = (track.scoreTotal ?? 0) >= 6
+    if (!aiHigh && !userHigh) {
+      await answerCallbackQuery(cq.id, "Score zu niedrig — min. 6 erforderlich.")
+      return
+    }
+    const videoJob = await prisma.videoJob.create({
+      data: { trackId, status: "queued", visualTrack: "auto" },
+    })
+    await enqueue("intro_render", null, { trackId, visualTrack: "auto", videoJobId: videoJob.id })
     await answerCallbackQuery(cq.id, "🎬 Video-Job gestartet!")
     await editMessageReplyMarkup(chatId, messageId)
     await sendTelegramNotification(`🎬 Video-Job für Track ${track.index + 1} von *${track.variant.project.title}* gestartet.`)

@@ -269,10 +269,16 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
   })
   if (!variant) throw new Error(`Variant not found after generation: ${variantId}`)
 
-  // Save all tracks, create Track records, run AI rating
+  // Save all tracks, create Track records, run AI rating.
+  // Existing tracks serve two purposes: versionName dedup AND retry idempotency —
+  // a retried job resumes the same provider taskId, so files already committed
+  // by a previous attempt must not produce duplicate Track rows.
+  const existingTracks = await prisma.track.findMany({
+    where: { variantId },
+    select: { sunoTaskId: true, sunoAudioId: true, index: true, versionName: true },
+  })
   const existingNames = new Set(
-    (await prisma.track.findMany({ where: { variantId }, select: { versionName: true } }))
-      .map(t => t.versionName).filter(Boolean) as string[]
+    existingTracks.map(t => t.versionName).filter(Boolean) as string[]
   )
   const usedNamesThisBatch = new Set<string>()
 
@@ -291,10 +297,26 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
   }
 
   let primaryAudioPath: string | null = null
+  const createdTrackIds: string[] = []
   for (let i = 0; i < files.length; i++) {
     const file = files[i]
     const audioPath = `outputs/audio/${file.filename}`
     let coverPath: string | null = null
+
+    // Retry idempotency: skip files whose Track row already exists from a
+    // previous attempt — matched by provider audio id, falling back to
+    // taskId+index. A fresh generation run has a new taskId, so its files
+    // are never skipped even when the variant already holds older tracks.
+    const alreadySaved = existingTracks.some(t =>
+      (file.providerAudioId != null && t.sunoAudioId === file.providerAudioId) ||
+      (file.providerAudioId == null && file.providerTaskId != null &&
+        t.sunoTaskId === file.providerTaskId && t.index === i)
+    )
+    if (alreadySaved) {
+      console.log(`[Worker] Skipping file ${i + 1}/${files.length} (${file.filename}) — track already saved by a previous attempt`)
+      if (i === 0) primaryAudioPath = audioPath
+      continue
+    }
 
     let buffer = file.buffer
     if (!buffer && file.url) {
@@ -365,7 +387,7 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
         librosaData
       )
 
-      await prisma.track.create({
+      const createdTrack = await prisma.track.create({
         data: {
           variantId: variant.id,
           index: i,
@@ -392,6 +414,7 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
           versionName: uniqueVersionName(analysis?.structure?.suggestedVersionName),
         },
       })
+      createdTrackIds.push(createdTrack.id)
 
       if (analysis) {
         console.log(`[Worker] AI analysis track ${i + 1}: score=${analysis.scores?.scoreTotal}, sections=${analysis.structure?.sections?.length}, name="${analysis.structure?.suggestedVersionName}"`)
@@ -415,11 +438,11 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
   fetchAndCacheSunoCredits().catch(() => {})
 
   try {
-    // Notify Telegram — one card per new track
+    // Notify Telegram — one card per track created THIS run (a retry must not
+    // re-send cards for tracks committed by a previous attempt)
     const newTracks = await prisma.track.findMany({
-      where: { variantId: variant.id },
-      orderBy: { createdAt: "desc" },
-      take: files.length,
+      where: { id: { in: createdTrackIds } },
+      orderBy: { index: "asc" },
     })
     for (const track of newTracks) {
       await sendTrackCard({
@@ -427,6 +450,7 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
         trackIndex:   track.index,
         versionName:  track.versionName,
         audioPath:    track.audioPath,
+        projectFolderPath: variant.project.folderPath,
         projectTitle: variant.project.title,
         variantLabel: variant.label,
         scoreTotal:   track.aiScoreTotal,
@@ -587,7 +611,19 @@ async function handleAnalyzeImportedTrack(job: { id: string; payload: string; va
 async function handleVideoRenderJob(job: { id: string; payload: string; variantId: string | null }) {
   const { trackId, visualTrack, videoJobId } = JSON.parse(job.payload)
 
-  await prisma.videoJob.update({ where: { id: videoJobId }, data: { status: "rendering" } })
+  // Conditional claim: only proceed while the VideoJob is still active.
+  // "rendering" must match too — intro_render already moved it there, and
+  // resetStaleJobs re-runs interrupted jobs in that state. A cancelled/
+  // rejected/failed VideoJob must NOT be resurrected by a queued render job.
+  const claimed = await prisma.videoJob.updateMany({
+    where: { id: videoJobId, status: { in: ["queued", "rendering"] } },
+    data: { status: "rendering" },
+  })
+  if (claimed.count === 0) {
+    console.log(`[Worker] VideoJob ${videoJobId} no longer active — skipping video_render`)
+    await markDone(job.id, { skipped: true, reason: "videoJob cancelled or gone" })
+    return
+  }
 
   const track = await prisma.track.findUnique({
     where: { id: trackId },
@@ -769,7 +805,18 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
     console.warn(`[Worker] bad structureJson for track ${track.id} — description without chapters`)
   }
 
-  await prisma.videoJob.update({ where: { id: videoJobId }, data: { status: "uploading" } })
+  // Conditional claim — upload only while the VideoJob is still approved
+  // (or resuming an interrupted upload). A job rejected after approval must
+  // not be uploaded, and a failed one must not be resurrected.
+  const claimedUpload = await prisma.videoJob.updateMany({
+    where: { id: videoJobId, status: { in: ["approved", "uploading"] } },
+    data: { status: "uploading" },
+  })
+  if (claimedUpload.count === 0) {
+    console.log(`[Worker] VideoJob ${videoJobId} not approved anymore — skipping youtube_upload`)
+    await markDone(job.id, { skipped: true, reason: "videoJob not approved" })
+    return
+  }
 
   const description = buildYouTubeDescription({
     structure: structure as never,
@@ -832,7 +879,17 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
 async function handleIntroRenderJob(job: { id: string; payload: string; variantId: string | null }) {
   const { trackId, videoJobId } = JSON.parse(job.payload)
 
-  await prisma.videoJob.update({ where: { id: videoJobId }, data: { status: "rendering" } })
+  // Conditional claim — do not resurrect a cancelled/rejected/failed VideoJob
+  // (e.g. superseded by a re-render while this job sat in the queue).
+  const claimed = await prisma.videoJob.updateMany({
+    where: { id: videoJobId, status: { in: ["queued", "rendering"] } },
+    data: { status: "rendering" },
+  })
+  if (claimed.count === 0) {
+    console.log(`[Worker] VideoJob ${videoJobId} no longer active — skipping intro_render`)
+    await markDone(job.id, { skipped: true, reason: "videoJob cancelled or gone" })
+    return
+  }
 
   const track = await prisma.track.findUnique({
     where: { id: trackId },
@@ -930,7 +987,26 @@ async function processJob() {
     console.error(`[Worker] Job ${job.id} failed:`, message)
     await markFailed(job.id, message)
     await reflectVideoJobFailure(job)
+    await reflectVariantJobFailure(job)
   }
+}
+
+// When a music/analyze job fails TERMINALLY, move its Variant out of the
+// transient "generating"/"analyzing" state so the UI (and maybeQueueMusicJob's
+// dedup) doesn't treat it as in-flight forever.
+async function reflectVariantJobFailure(job: { id: string; type: string; payload: string; variantId: string | null }) {
+  if (!["music_api", "analyze_imported_track"].includes(job.type)) return
+  const fresh = await prisma.job.findUnique({ where: { id: job.id }, select: { status: true } })
+  if (fresh?.status !== "failed") return // still retrying → leave Variant untouched
+  let variantId = job.variantId
+  if (!variantId) {
+    try { variantId = JSON.parse(job.payload).variantId ?? null } catch { /* ignore */ }
+  }
+  if (!variantId) return
+  await prisma.variant.updateMany({
+    where: { id: variantId, status: { in: ["generating", "analyzing"] } },
+    data: { status: "failed" },
+  })
 }
 
 // When a video-pipeline job fails TERMINALLY, move its VideoJob out of the
@@ -972,6 +1048,34 @@ async function reconcileVideoJobs() {
   if (fixed) console.log(`[Worker] reconciled ${fixed} orphaned videoJob(s) → failed`)
 }
 
+// Same sweep for Variants: anything stuck in "generating"/"analyzing" with no
+// live job behind it (worker killed, job cleaned up) is failed on startup so
+// the regenerate button reappears in the UI.
+async function reconcileVariants() {
+  const stuck = await prisma.variant.findMany({
+    where: { status: { in: ["generating", "analyzing"] } },
+    select: { id: true },
+  })
+  let fixed = 0
+  for (const v of stuck) {
+    const live = await prisma.job.findFirst({
+      where: {
+        status: { in: ["pending", "processing"] },
+        OR: [{ variantId: v.id }, { payload: { contains: v.id } }],
+      },
+      select: { id: true },
+    })
+    if (!live) {
+      await prisma.variant.updateMany({
+        where: { id: v.id, status: { in: ["generating", "analyzing"] } },
+        data: { status: "failed" },
+      })
+      fixed++
+    }
+  }
+  if (fixed) console.log(`[Worker] reconciled ${fixed} stuck variant(s) → failed`)
+}
+
 // ffmpeg runs via execSync, which blocks the event loop — so if the worker is
 // killed mid-render its ffmpeg child is orphaned and keeps burning CPU. On a
 // fresh start any pipeline ffmpeg is necessarily stale, so reap them. (Also
@@ -991,6 +1095,7 @@ async function main() {
   const requeued = await resetStaleJobs()
   if (requeued) console.log(`[Worker] requeued ${requeued} interrupted job(s)`)
   await reconcileVideoJobs()
+  await reconcileVariants()
 
   let shuttingDown = false
 

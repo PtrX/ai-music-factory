@@ -1,4 +1,5 @@
 import * as fs from "fs/promises"
+import { projectFileUrl } from "@/lib/storage"
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID
@@ -60,6 +61,7 @@ export async function sendTrackCard(params: {
   trackIndex: number
   versionName: string | null
   audioPath: string
+  projectFolderPath: string
   projectTitle: string
   variantLabel: string
   scoreTotal: number | null
@@ -70,8 +72,18 @@ export async function sendTrackCard(params: {
 }): Promise<void> {
   if (!BOT_TOKEN || !CHAT_ID) return
 
+  const fallbackText =
+    `✅ Track fertig: *${params.projectTitle}* Variant ${params.variantLabel} Track ${params.trackIndex + 1}\nScore: ${params.scoreTotal ?? "—"}`
+
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
-  const audioUrl = `${appUrl}/api/audio/${encodeURIComponent(params.audioPath)}`
+  // The audio route serves storage/projects/<folder>/<relativePath>, so the URL
+  // must include the project folder segment — projectFileUrl owns that contract.
+  const fileUrl = projectFileUrl(params.projectFolderPath, params.audioPath)
+  if (!fileUrl) {
+    await sendTelegramNotification(fallbackText)
+    return
+  }
+  const audioUrl = `${appUrl}${fileUrl}`
 
   const scoreLine = [
     params.scoreHook  != null ? `H:${params.scoreHook}`  : null,
@@ -87,7 +99,7 @@ export async function sendTrackCard(params: {
     (params.aiNotes ? `\n_${params.aiNotes.slice(0, 200)}_` : "")
 
   try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendAudio`, {
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendAudio`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -98,12 +110,17 @@ export async function sendTrackCard(params: {
         reply_markup: buildTrackKeyboard(params.trackId),
       }),
     })
+    // Telegram signals errors (e.g. it cannot fetch the audio URL) via ok:false
+    // on an HTTP 400 — fetch does not throw for that, so check explicitly.
+    const json = await res.json() as { ok: boolean; description?: string }
+    if (!json.ok) {
+      console.error("[Telegram] sendTrackCard failed:", json.description)
+      await sendTelegramNotification(fallbackText)
+    }
   } catch (err) {
     console.error("[Telegram] sendTrackCard failed:", err)
     // Fallback to plain text notification
-    await sendTelegramNotification(
-      `✅ Track fertig: *${params.projectTitle}* Variant ${params.variantLabel} Track ${params.trackIndex + 1}\nScore: ${params.scoreTotal ?? "—"}`
-    )
+    await sendTelegramNotification(fallbackText)
   }
 }
 

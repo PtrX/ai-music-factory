@@ -120,15 +120,32 @@ export async function DELETE(
       )
     }
 
-    await fs.rm(project.folderPath, { recursive: true, force: true })
-
+    // Delete the DB row FIRST (cascades to variants/tracks/video jobs), then
+    // clean up files. The reverse order destroys data when the DB delete fails:
+    // files gone, rows still there pointing at nothing.
     await prisma.project.delete({
       where: { id: params.id },
     })
 
-    return NextResponse.json({ success: true })
+    let warning: string | undefined
+    if (project.folderPath && project.folderPath.trim()) {
+      try {
+        await fs.rm(project.folderPath, { recursive: true, force: true })
+      } catch (rmError) {
+        console.error("Project row deleted but folder cleanup failed:", rmError)
+        warning = "Project deleted, but its folder could not be removed from disk"
+      }
+    }
+
+    return NextResponse.json({ success: true, ...(warning && { warning }) })
   } catch (error) {
     console.error("Delete project error:", error)
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      return NextResponse.json(
+        { error: "Project not found", code: "NOT_FOUND" },
+        { status: 404 }
+      )
+    }
     return NextResponse.json(
       { error: "Failed to delete project", code: "INTERNAL_ERROR" },
       { status: 500 }
