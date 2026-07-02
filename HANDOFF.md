@@ -1,65 +1,74 @@
 # HANDOFF — AI Music Factory
-_Stand: 2026-07-02_
+_Stand: 2026-07-02 abend_
 
 > Zuerst lesen: `BEATS2YOUTUBE_CHECKLIST.md`. Repo ist öffentlich (github.com/PtrX/ai-music-factory).
 
-## Was diese Session gemacht wurde: Bug-Jagd + 29 Fixes
+## Was diese Session gemacht wurde
 
-Kompletter Codebase-Bug-Hunt per Multi-Agent-Workflow (6 Subsystem-Reviewer → adversarialer Verifier pro Finding). Ergebnis: **51 bestätigte Bugs, 3 widerlegte Claims**. Davon **29 gefixt** in drei Commits — alle Highs, alle Mediums, alle 11 Media-Pipeline-Findings:
+### 1. Codebase-Bug-Jagd: 51 bestätigte Bugs, 29 gefixt (3 Commits)
 
-### `00e64e9` — 6 Pipeline-Bugs (High + Zombie-States)
-- **Retry-Duplikate**: `handleMusicJob` überspringt Dateien, deren Track-Row schon aus einem früheren Versuch existiert (Match: `providerAudioId`, Fallback `providerTaskId`+Index). Vorher: doppelte Tracks → doppelte YouTube-Uploads. Telegram-Karten nur noch für in DIESEM Lauf erstellte Tracks.
-- **Track-Karten kamen nie an**: `sendTrackCard` baute die Audio-URL ohne Projekt-Ordner-Segment (immer 404). Jetzt via `projectFileUrl()` + `ok:false`-Check mit Text-Fallback.
-- **„🎬 Generate Video"-Button** (Telegram): legte nur die VideoJob-Row an, enqueued jetzt wirklich `intro_render` (+ Score-/DNA-Preconditions).
-- **Cancelled VideoJobs**: Worker claimt VideoJobs bedingt (`updateMany` mit Status-Filter) — abgebrochene/rejected Jobs werden nicht mehr wiederbelebt, nach Freigabe abgelehnte nicht hochgeladen.
-- **Variant-Zombies**: terminale music/analyze-Fehler setzen Variant auf `failed`; Startup-Sweep `reconcileVariants()`.
-- **Projekt-DELETE**: erst DB-Row (Cascade), dann Dateien — vorher konnte ein Fehlschlag Dateien vernichten und Rows zurücklassen.
+Multi-Agent-Workflow (6 Subsystem-Reviewer → adversarialer Verifier pro Finding), 11 Kandidaten inline nachverifiziert (100% Trefferquote).
 
-### `5df64a0` — 12 Medium-Findings
-- **Auto-Chain aktiviert**: `maybeQueueMusicJob` wird nach Lyrics-/Prompt-Jobs aufgerufen → **neue Projekte generieren automatisch Musik (= Suno-Credits) sobald Lyrics+Prompt fertig sind**. Falls unerwünscht: die zwei Aufrufe in `worker/index.ts` (nach `markDone` in `handleLyricsJob`/`handlePromptJob`) entfernen.
-- **Telegram-Webhook verlangt Secret** (`x-telegram-bot-api-secret-token`, fail closed). Setup-Route übergibt `secret_token`, Poller schickt den Header mit. → siehe „Sofort nötig" unten.
-- sunoapi.org: `SENSITIVE_WORD_ERROR` = terminal (vorher 15-min-Polling), `CALLBACK_EXCEPTION` wird über vorhandene Tracks aufgelöst, echte Fehlermeldung in `lastError`/Telegram-Alert.
-- Telegram-Lib: alle Calls durch `tgCall` (loggt `ok:false` — 4xx waren stumm), Legacy-Markdown-Escaper.
-- `/generate` (Telegram) baut echten music_api-Payload aus Prompt-/Lyrics-Dateien statt `{}`.
-- Overnight-Batch zählt `processing` statt nonexistentem `rendering` (Batch brach mitten im letzten Render ab).
-- Audio-Route: boundary-aware Traversal-Guard + RFC-korrektes Range-Handling.
-- External-API: variantCount-Clamp auf 5 (6–10 crashte), 400 bei kaputtem JSON, strukturierter 500 mit `projectId`.
-- Frontend: Error-Banner auf Projektseite (Mutation-Fehler waren unsichtbar), Favoriten-Stern ent-togglebar + Revert bei HTTP-Fehlern.
+**`00e64e9` — 6 Pipeline-Bugs (High + Zombie-States):**
+- Retry-Duplikate: `handleMusicJob` überspringt bereits committete Dateien (Match `providerAudioId`, Fallback taskId+Index) — vorher doppelte Tracks → doppelte YouTube-Uploads. Telegram-Karten nur für Tracks aus DIESEM Lauf.
+- Track-Karten kamen nie an: Audio-URL ohne Projekt-Ordner-Segment (immer 404) → jetzt `projectFileUrl()` + `ok:false`-Check mit Text-Fallback.
+- Telegram „🎬 Generate Video"-Button enqueued jetzt wirklich `intro_render` (+ Score-/DNA-Preconditions).
+- Worker claimt VideoJobs bedingt — cancelled/rejected Jobs werden nicht wiederbelebt, nach Freigabe abgelehnte nicht hochgeladen.
+- Terminale music/analyze-Fehler setzen Variant auf `failed`; Startup-Sweep `reconcileVariants()`.
+- Projekt-DELETE: erst DB-Row (Cascade), dann Dateien.
 
-### `344c5e3` — 11 Media-Pipeline-/Client-Bugs (inline nachverifiziert, alle echt)
-- **Intro-Encode `-pix_fmt yuv420p -r 30`**: RGBA-Filtergraph ließ libx264 yuv444p wählen → `-c copy`-Concat mit yuv420p-B-Roll = korruptes Endvideo. ⚠️ **Alte Intros in `storage/` haben noch das kaputte Format — betroffene Videos neu rendern.**
-- **Flash-Cut**: exakt 1 weißer Frame, Haupt-Clip um 1/30s gekürzt (vorher +2 Frames Drift pro Flash-Cut, kumulativ).
-- **Rejected Clips** bleiben rejected (Download-Pfad prüfte `isRejected` nicht — Reject-Button war wirkungslos).
-- Segment-Länge per ffprobe statt gerundeter API-Ganzzahl; `-t 0`-Guard (leeres Video wurde „ready"); leere Sections crashen `buildDirectives` nicht mehr; LLM-Farbvalidierung; Gemini→OpenRouter-Fallthrough im Preset-Analyzer; generic-http validiert Job-ID + Status-Vokabular; `external-auth` header-only + constant-time; retry-fetch cancelt Response-Bodies.
+**`5df64a0` — 12 Mediums:**
+- **Auto-Chain aktiviert**: `maybeQueueMusicJob` nach Lyrics-/Prompt-Jobs → neue Projekte generieren automatisch Musik (= Suno-Credits!). Rückbau: die zwei Aufrufe nach `markDone` in `handleLyricsJob`/`handlePromptJob` entfernen.
+- **Telegram-Webhook verlangt Secret** (`x-telegram-bot-api-secret-token`, fail closed); Setup-Route + Poller angepasst.
+- sunoapi.org: `SENSITIVE_WORD_ERROR` terminal, `CALLBACK_EXCEPTION` über vorhandene Tracks aufgelöst, echte Fehlermeldung in `lastError`.
+- Telegram-Lib: zentraler `tgCall` (4xx waren stumm), Legacy-Markdown-Escaper; `/generate` baut echten Payload; Overnight-Batch zählt `processing`; Audio-Route Traversal-Guard + Range-Handling; External-API Clamp/Validierung; Error-Banner Projektseite; Favoriten-Stern-Fix.
 
-## Sofort nötig (Deployment-Auswirkungen!)
+**`344c5e3` — 11 Media-Pipeline-/Client-Bugs:**
+- Intro-Encode `-pix_fmt yuv420p -r 30` (yuv444p korrumpierte den `-c copy`-Concat). ⚠️ Alte Intros in `storage/` ggf. neu rendern.
+- Flash-Cut: exakt 1 weißer Frame, Clip um 1/30s gekürzt (kumulativer Beat-Drift weg); Segment-Länge per ffprobe statt API-Ganzzahl; `-t 0`-Guard.
+- Rejected Clips bleiben rejected (Download-Pfad); leere Sections crashen nicht; LLM-Farbvalidierung; Gemini→OpenRouter-Fallthrough; generic-http validiert; external-auth header-only + constant-time; retry-fetch cancelt Bodies.
 
-1. **`TELEGRAM_WEBHOOK_SECRET` auf CT 100 setzen** (`openssl rand -hex 32`) — ohne die Variable lehnt der Webhook ALLE Updates ab (fail closed) und der Poller beendet sich mit Fehlermeldung. Lokal ist sie schon in `.env.local` generiert. Bei echtem Webhook danach einmal `/api/telegram/setup` aufrufen.
-2. **Hermes auf `x-api-key`-Header umstellen** — `?api_key=` Query-Parameter wird nicht mehr akzeptiert (stand in Access-Logs).
-3. **Image-Rebuild auf CT 100** (Code ist ins Image gebacken) — erst nach Punkt 1+2.
-4. **Auto-Chain-Verhalten prüfen** (siehe `5df64a0` oben): neue Projekte verbrauchen jetzt automatisch Suno-Credits. Bewusste Design-Entscheidung laut Code-Kommentar, aber Peter sollte es einmal absegnen.
+### 2. Status-Bar-Umbau (`3743cbe`, `eef00a7`)
 
-## Offene Punkte
+- Vorher: Server-Komponente mit `noStore()` — ALLE Provider-Checks (sunoapi, OpenRouter, Higgsfield-CLI 10s, Whisper-Spawn) bei JEDER Navigation.
+- Jetzt: Client-Komponente, holt `/api/system/status` **einmal beim Seitenaufruf**; Refresh nur via `amf:refresh-status`-Event nach echten Aktionen (Musik generieren, KI-Analyse, Render, YouTube-Freigabe — Projektseite + Dashboard) + ein verzögerter Re-Fetch nach 20s (Worker verbraucht Credits asynchron). Kein Polling. Helper: `lib/status-refresh.ts`.
+- Credits aufgerundet ohne „cr" (Suno `870`, Higgsfield `1001`), passt in eine Zeile.
+- Browser-verifiziert: 1 Fetch beim Laden (Dev-StrictMode: 2), kein Refetch bei Navigation, Event triggert genau einen Fetch.
 
-- **~18 Low-Findings** aus der Bug-Jagd noch offen (stille Frontend-Fehler in Dashboard/Preset-Dialog/Rating-Form, `/tracks` zeigt nur 6-stellige ID-Suffixe aber `/approve` braucht volle ID, Poller-Busy-Loop bei 409, suno-gcui Default-URL = eigene App, system-status prüft falsche Env-Vars, YouTube-OAuth-Fallback-URL). Details: Workflow-Output `/private/tmp/claude-501/.../tasks/w99wl5iec.output` (temporär!) oder neu jagen.
-- **`CLAUDE.md` im Root ist untracked** — wurde 2026-07-02 14:27 NICHT von dieser Session erstellt (Peter oder Parallel-Session?). Inhalt sieht korrekt aus. Entscheiden: committen oder löschen.
-- Aus der Vorsession noch offen: YouTube-Duplikate von `track_a1` löschen (Task-Chip `task_e2b5494b`), SoundCloud-Album „Дорога домой" final bestätigen, Preset-Upload-Fix von Peter selbst testen, `SHORTS-FACTORY-HANDOFF.md` an shorts_factory übergeben, Kuration-Feature (`curationStatus`) planen.
+## Sofort nötig (vor dem nächsten Prod-Deploy!)
+
+1. **`TELEGRAM_WEBHOOK_SECRET` auf CT 100 setzen** (`openssl rand -hex 32`) — ohne die Variable lehnt der Webhook ALLE Updates ab (fail closed), der Poller beendet sich mit Fehlermeldung. Lokal schon in `.env.local`. Bei echtem Webhook danach einmal `/api/telegram/setup`.
+2. **Hermes auf `x-api-key`-Header umstellen** — `?api_key=` wird nicht mehr akzeptiert.
+3. **Push + Image-Rebuild CT 100** — erst nach 1+2.
+4. **Auto-Chain absegnen**: neue Projekte verbrauchen jetzt automatisch Suno-Credits (Design-Intention laut Code, aber bewusste Peter-Entscheidung ausstehend).
+
+## Nächste Schritte (Vorschläge, priorisiert)
+
+1. **Deploy-Paket schnüren** (Punkte oben: Secret setzen → Hermes-Header → `git push` → CT-100-Rebuild → Smoke-Test Telegram-Bot + ein Track-Card-Versand). Eine Session, größter Nutzen: die 29 Fixes laufen sonst nur lokal.
+2. **Betroffene Videos neu rendern**: Ein Video mit Intro aus `storage/` prüfen (Playback nach dem Intro-Übergang) — falls korrupt, VideoJobs der hochgeladenen Videos re-rendern, bevor mehr davon auf YouTube landet.
+3. **Restliche ~18 Low-Findings fixen** (kleine Session, ~1h): stille Frontend-Fehler (Dashboard approve/create, Preset-Dialog, Rating-Form), `/tracks` volle Track-IDs, Poller-Backoff bei 409, suno-gcui Default-URL, system-status Env-Checks, YouTube-OAuth-Fallback-URL.
+4. **Regressionstests für die kritischen Fixes**: Retry-Idempotenz (handleMusicJob), Range-Handling der Audio-Route, `projectFileUrl`-Vertrag von sendTrackCard — die drei Bugs mit dem größten Schadenspotenzial haben noch keine Tests.
+5. **Kuration-Feature** (`curationStatus` auf Track, overnight-batch rendert nur `video-ready`): war schon in der Vorsession als größter Hebel identifiziert — verhindert 18 Versionen pro Song auf YouTube. Als Plan ausarbeiten.
+6. **Aufräumen aus Vorsession**: YouTube-Duplikate `track_a1` löschen (Task-Chip `task_e2b5494b`), SoundCloud-Album „Дорога домой" final bestätigen, `SHORTS-FACTORY-HANDOFF.md` an shorts_factory übergeben.
+7. **`CLAUDE.md` im Root entscheiden**: liegt untracked, wurde 2026-07-02 14:27 NICHT von dieser Session erstellt (Peter oder Parallel-Session?), Inhalt sieht korrekt aus → committen oder löschen.
 
 ## Aktueller Systemstand
 
-- **Branch `main`, alles committed, NICHT gepusht** (3 neue Commits: `00e64e9`, `5df64a0`, `344c5e3`). Push erst nach Peters Review ok — enthält Breaking Changes (Webhook-Secret, Hermes-Header).
-- Typecheck grün, alle 8 Tests in `tests/` grün. UI-Änderungen (Error-Banner, Stern) nicht browser-verifiziert (leere Dev-DB).
-- Produktion (CT 100) läuft noch auf ALTEM Stand — Rebuild ausstehend (siehe „Sofort nötig").
+- **Branch `main`, 6 ungepushte Commits**: `00e64e9`, `5df64a0`, `344c5e3`, `2a6e240` (Handoff), `3743cbe`, `eef00a7`. Bewusst nicht gepusht — Breaking Changes (Webhook-Secret, Hermes-Header) brauchen erst die Deploy-Schritte oben.
+- Typecheck grün, alle 8 Tests grün. Status-Bar browser-verifiziert.
+- **Produktion (CT 100) läuft auf ALTEM Stand** (vor allen Fixes).
+- Higgsfield-Konto: ~1000 Credits, Plan „Plus" (Stand heute).
 
 ## Gotchas (neu diese Session)
 
 | Was | Detail |
 |---|---|
-| ffmpeg concat `-c copy` | Alle Teile müssen pix_fmt/fps/Auflösung teilen. RGB-Filtergraph → libx264 wählt yuv444p, wenn kein `-pix_fmt` gesetzt ist. Immer explizit `-pix_fmt yuv420p -r 30`. |
-| lavfi `color` mit `d=0.04` | erzeugt bei r=30 ZWEI Frames, nicht einen — `-frames:v 1` verwenden. |
-| Telegram-API-Fehler | HTTP 400 mit `ok:false` — `fetch` wirft NICHT. Immer Body prüfen (jetzt zentral in `tgCall`). |
-| Workflow-Subagenten | Erben das Session-Modell (hier Fable 5!) — mechanische Stages explizit mit `model`/`effort`-Override billiger machen. Resume-Cache matcht das längste unveränderte Präfix; bei parallelen Stages bricht er wegen nondeterministischer Reihenfolge → Re-Runs. 60-Agenten-Lauf ≈ 3 Mio. Tokens. |
-| `TELEGRAM_WEBHOOK_SECRET` | Webhook + Poller brauchen dieselbe Variable, sonst Totalausfall der Telegram-Integration (bewusst fail closed). |
+| ffmpeg concat `-c copy` | Alle Teile brauchen gleiches pix_fmt/fps/Auflösung. RGB-Filtergraph → libx264 wählt ohne `-pix_fmt` still yuv444p. Immer explizit `-pix_fmt yuv420p -r 30`. |
+| lavfi `color` mit `d=0.04` | erzeugt bei r=30 ZWEI Frames — für Einzelframes `-frames:v 1`. |
+| Telegram-API-Fehler | HTTP 400 mit `ok:false` — `fetch` wirft NICHT. Body prüfen (zentral in `tgCall`). |
+| Workflow-Subagenten (Claude) | Erben das Session-Modell (Fable 5!) — mechanische Stages mit `model`/`effort`-Override. Resume-Cache bricht bei parallelen Stages. 60 Agenten ≈ 3 Mio. Tokens. Memory: `workflow-model-override`. |
+| `TELEGRAM_WEBHOOK_SECRET` | Webhook + Poller brauchen dieselbe Variable, sonst Totalausfall Telegram (bewusst fail closed). |
+| Status-Bar-Refresh | Nach neuen credit-verbrauchenden UI-Aktionen `refreshSystemStatus()` aus `lib/status-refresh.ts` aufrufen — sonst bleibt die Anzeige stehen. |
 
 ## Gotchas (weiter gültig aus Vorsessions)
 
