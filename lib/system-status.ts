@@ -97,7 +97,7 @@ async function checkSuno(): Promise<ServiceStatus> {
     return {
       available: true,
       label: "Suno",
-      detail: credits !== null ? `${credits} cr` : undefined,
+      detail: credits !== null ? String(Math.ceil(credits)) : undefined,
       group: "ai",
     }
   }
@@ -125,7 +125,7 @@ async function checkHiggsfield(): Promise<ServiceStatus> {
     return {
       available: true,
       label: "Higgsfield",
-      detail: credits !== null ? `${credits} cr` : undefined,
+      detail: credits !== null ? String(Math.ceil(credits)) : undefined,
       group: "video",
     }
   } catch (err) {
