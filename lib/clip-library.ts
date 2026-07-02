@@ -142,7 +142,10 @@ export async function findClipForDirective(
   const dbExisting = await prisma.clip.findUnique({
     where: { sourceApi_externalId: { sourceApi: found.source, externalId: found.id } },
   })
-  if (dbExisting && !dbExisting.isRejected) {
+  // A rejected clip must not be resurrected — falling through to step 4 would
+  // re-download and return it, making the reject curation flag ineffective.
+  if (dbExisting?.isRejected) return null
+  if (dbExisting) {
     const localPath = path.join(CLIPS_BASE, dbExisting.localPath)
     try {
       await fs.access(localPath)
@@ -233,7 +236,9 @@ export async function buildClipPool(
       const dbClip = await prisma.clip.findUnique({
         where: { sourceApi_externalId: { sourceApi: "pexels", externalId: found.id } },
       })
-      if (dbClip && !dbClip.isRejected && dbClip.width > dbClip.height) {
+      // Rejected clips must not re-enter the pool via the download path either
+      if (dbClip?.isRejected) continue
+      if (dbClip && dbClip.width > dbClip.height) {
         try {
           await fs.access(path.join(CLIPS_BASE, dbClip.localPath))
           pool.push({

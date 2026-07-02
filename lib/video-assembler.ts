@@ -38,8 +38,19 @@ export async function assembleVideo(input: AssemblyInput): Promise<string> {
 
     const tmpClip = path.join(workDir, `seg-${i}-clip.mp4`)
     const clipDuration = Math.max(Math.min(d.clipDurationSec, d.endSec - d.startSec), 0.1)
+    // The white flash is CONCATENATED in front of the clip, so the clip must be
+    // trimmed by exactly the flash length (1 frame) — otherwise every flash-cut
+    // segment runs 1 frame long and the beat sync drifts cumulatively.
+    const flashDur = d.effect === "flash-cut" ? 1 / 30 : 0
+    const mainDur = clipDuration - flashDur
 
-    const clipFileDur = clip.durationSec > 0 ? clip.durationSec : clipDuration + 4
+    // Provider APIs report duration as a rounded integer — probe the real file
+    // so a short-delivering clip loops instead of producing a short segment
+    // (which would shift every later cut off the beat).
+    const probedDur = await getVideoDuration(clip.localPath)
+    const clipFileDur = probedDur > 0
+      ? probedDur
+      : clip.durationSec > 0 ? clip.durationSec : clipDuration + 4
     const maxSeek = Math.max(0, clipFileDur - clipDuration - 0.5)
     const seekOffset = (Math.random() > 0.65 && maxSeek > 0.5)
       ? Math.random() * Math.min(maxSeek, 2.0) : 0
@@ -51,10 +62,11 @@ export async function assembleVideo(input: AssemblyInput): Promise<string> {
     const loop = needsLoop ? "-stream_loop -1 " : ""
     // Scale to COVER the 1920x1080 frame and crop the overflow (zoom-to-fill)
     // instead of padding — never leaves black bars on non-16:9 source clips.
+    // -pix_fmt yuv420p keeps all segments concat-copy-compatible.
     execSync(
-      `ffmpeg -y ${loop}-ss ${seekOffset.toFixed(3)} -i "${clip.localPath}" -t ${clipDuration.toFixed(3)} ` +
+      `ffmpeg -y ${loop}-ss ${seekOffset.toFixed(3)} -i "${clip.localPath}" -t ${mainDur.toFixed(3)} ` +
       `-vf "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30" ` +
-      `-c:v libx264 -preset fast -crf 23 -an "${tmpClip}"`,
+      `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -an "${tmpClip}"`,
       { timeout: 120000, stdio: "ignore" }
     )
 
@@ -63,8 +75,10 @@ export async function assembleVideo(input: AssemblyInput): Promise<string> {
 
     if (d.effect === "flash-cut") {
       const flashFile = path.join(workDir, `seg-${i}-flash.mp4`)
+      // Exactly ONE 30fps frame (lavfi d=0.04 rendered two), yuv420p so the
+      // `-c copy` concat below matches the main clip's codec parameters.
       execSync(
-        `ffmpeg -y -f lavfi -i "color=c=white:s=1920x1080:d=0.04:r=30" -c:v libx264 -preset fast -crf 23 "${flashFile}"`,
+        `ffmpeg -y -f lavfi -i "color=c=white:s=1920x1080:r=30" -frames:v 1 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p "${flashFile}"`,
         { timeout: 30000, stdio: "ignore" }
       )
       const cl = path.join(workDir, `seg-${i}-concat.txt`)
@@ -123,6 +137,12 @@ export async function assembleFullVideo(input: {
     }
 
     const audioDur = await getVideoDuration(audioPath)
+    // A failed/`N/A` probe returns 0 — running ffmpeg with `-t 0` would write a
+    // header-only MP4 that gets marked "ready" and could go to YouTube. Fail
+    // loudly instead so the job errors and retries.
+    if (audioDur <= 0) {
+      throw new Error(`Could not determine audio duration for ${audioPath} — aborting assembly`)
+    }
     const videoDur = await getVideoDuration(videoSource)
     const loopFlag = videoDur < audioDur - 0.1 ? "-stream_loop -1" : ""
 

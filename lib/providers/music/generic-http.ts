@@ -36,7 +36,13 @@ export class GenericHttpSunoProvider implements MusicGenerationProvider {
     }
 
     const data = await response.json()
-    return { jobId: data.jobId || data.id }
+    const jobId = data.jobId || data.id
+    if (!jobId) {
+      // Without this guard the worker would persist sunoTaskId=undefined and
+      // poll /api/status/undefined for 15 minutes.
+      throw new Error(`Suno API: create response has no job id: ${JSON.stringify(data).slice(0, 200)}`)
+    }
+    return { jobId: String(jobId) }
   }
 
   async getStatus(jobId: string): Promise<JobStatus> {
@@ -50,7 +56,26 @@ export class GenericHttpSunoProvider implements MusicGenerationProvider {
       throw new Error(`Suno status error: ${response.status}`)
     }
 
-    return response.json()
+    // Map the provider's status vocabulary onto ours instead of trusting the
+    // response shape — an unmapped value ("complete", "SUCCESS", ...) would
+    // otherwise poll for 15 minutes and end as a generic timeout.
+    const raw = await response.json()
+    const STATUS_MAP: Record<string, JobStatus["status"]> = {
+      pending: "pending", queued: "pending", submitted: "pending",
+      processing: "processing", running: "processing", generating: "processing", streaming: "processing",
+      complete: "completed", completed: "completed", success: "completed", done: "completed",
+      failed: "failed", error: "failed", cancelled: "failed",
+    }
+    const status = STATUS_MAP[String(raw?.status ?? "").toLowerCase()]
+    if (!status) {
+      throw new Error(`Suno status: unrecognized status ${JSON.stringify(raw?.status)} for job ${jobId}`)
+    }
+    return {
+      id: String(raw?.id ?? jobId),
+      status,
+      progress: typeof raw?.progress === "number" ? raw.progress : undefined,
+      error: raw?.error || raw?.errorMessage || undefined,
+    }
   }
 
   async downloadResult(jobId: string): Promise<AudioFile[]> {

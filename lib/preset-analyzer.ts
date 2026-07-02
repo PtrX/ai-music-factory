@@ -55,47 +55,54 @@ async function callAI(audioFilePath: string, prompt: string): Promise<Record<str
   const geminiKey = process.env.GEMINI_API_KEY
   const openrouterKey = process.env.OPENROUTER_API_KEY
 
+  // Gemini first; on ANY failure fall through to the OpenRouter block below so
+  // a transient Gemini error doesn't abort the analysis when a fallback is
+  // configured (mirrors lyrics-extractor's Whisper→Gemini chain).
   if (geminiKey) {
-    try {
-      const audioBuffer = await fs.readFile(audioFilePath)
-      const base64Audio = audioBuffer.toString("base64")
-      const ext = path.extname(audioFilePath).toLowerCase().replace(".", "")
-      const mimeType = ext === "mp3" ? "audio/mpeg" : `audio/${ext}`
-      const model = process.env.GEMINI_AUDIO_MODEL || "gemini-2.5-flash"
+    const geminiResult = await (async (): Promise<Record<string, unknown> | null> => {
+      try {
+        const audioBuffer = await fs.readFile(audioFilePath)
+        const base64Audio = audioBuffer.toString("base64")
+        const ext = path.extname(audioFilePath).toLowerCase().replace(".", "")
+        const mimeType = ext === "mp3" ? "audio/mpeg" : `audio/${ext}`
+        const model = process.env.GEMINI_AUDIO_MODEL || "gemini-2.5-flash"
 
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 60_000)
-      const res = await fetchWithRetry(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [
-              { inlineData: { mimeType, data: base64Audio } },
-              { text: prompt },
-            ]}],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
-          }),
-          signal: controller.signal,
-        },
-        2
-      )
-      clearTimeout(timeout)
-      if (!res.ok) {
-        console.error("[Preset/Gemini] API error:", res.status)
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 60_000)
+        const res = await fetchWithRetry(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [
+                { inlineData: { mimeType, data: base64Audio } },
+                { text: prompt },
+              ]}],
+              generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
+            }),
+            signal: controller.signal,
+          },
+          2
+        )
+        clearTimeout(timeout)
+        if (!res.ok) {
+          console.error("[Preset/Gemini] API error:", res.status)
+          return null
+        }
+        const data = await res.json()
+        const parts: Array<{ text?: string }> = data?.candidates?.[0]?.content?.parts || []
+        const content = parts.map(p => p.text || "").join("")
+        const match = content.match(/\{[\s\S]*\}/)
+        if (!match) { console.error("[Preset/Gemini] No JSON:", content.slice(0, 500)); return null }
+        return JSON.parse(match[0])
+      } catch (err) {
+        console.error("[Preset/Gemini] Failed:", err instanceof Error ? err.message : err)
         return null
       }
-      const data = await res.json()
-      const parts: Array<{ text?: string }> = data?.candidates?.[0]?.content?.parts || []
-      const content = parts.map(p => p.text || "").join("")
-      const match = content.match(/\{[\s\S]*\}/)
-      if (!match) { console.error("[Preset/Gemini] No JSON:", content.slice(0, 500)); return null }
-      return JSON.parse(match[0])
-    } catch (err) {
-      console.error("[Preset/Gemini] Failed:", err instanceof Error ? err.message : err)
-      return null
-    }
+    })()
+    if (geminiResult) return geminiResult
+    if (openrouterKey) console.warn("[Preset] Gemini failed — falling back to OpenRouter")
   }
 
   if (openrouterKey) {

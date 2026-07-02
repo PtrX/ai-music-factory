@@ -177,15 +177,27 @@ export function buildDirectives(
   type Energy = "low" | "medium" | "high" | "peak"
   const FPS = 30
   const snap = (t: number) => Math.round(t * FPS) / FPS
+  // analyze_audio.py drops segments shorter than 3s, so a short track can
+  // legitimately return zero sections while still having beatTimes — synthesize
+  // one full-length section instead of crashing on sections[-1] below.
+  const sections: TrackStructure["sections"] = structure.sections?.length
+    ? structure.sections
+    : [{
+        type: "verse",
+        startSec: 0,
+        endSec: audioDurationSec ?? (structure as any).totalDurationSec ?? 0,
+        energy: "medium",
+      }]
+
   // Absolute end of the timeline — must cover the WHOLE audio so the b-roll
   // stays sample-accurate against the music (no looping / no early-start drift).
-  const lastSection = structure.sections[structure.sections.length - 1]
+  const lastSection = sections[sections.length - 1]
   const audioEnd = snap(
     audioDurationSec ?? (structure as any).totalDurationSec ?? (lastSection ? lastSection.endSec : 0)
   )
 
   const sectionAt = (t: number) =>
-    structure.sections.find(s => t >= s.startSec && t < s.endSec) ?? lastSection
+    sections.find(s => t >= s.startSec && t < s.endSec) ?? lastSection
 
   const makeDirective = (
     startSec: number,
@@ -210,7 +222,7 @@ export function buildDirectives(
     // 1) Collect clip-start boundaries. `energy` is the energy of the clip that
     //    STARTS at that boundary (accents start a punchy clip).
     const bounds: { time: number; energy: Energy; accent: boolean }[] = []
-    for (const section of structure.sections) {
+    for (const section of sections) {
       const e = section.energy as Energy
       const idxs: number[] = []
       for (let i = 0; i < beatTimes.length; i++) {
@@ -257,7 +269,7 @@ export function buildDirectives(
   } else {
     // No beats at all: one clip per section, still tiling from the intro offset.
     let cursor = snap(introOffsetSec)
-    for (const section of structure.sections) {
+    for (const section of sections) {
       const end = snap(section.endSec)
       if (end <= cursor + 0.1) continue
       directives.push(makeDirective(cursor, end, section.energy as Energy, section))

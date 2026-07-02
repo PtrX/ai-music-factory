@@ -81,7 +81,12 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
 
   try {
     const dur = Math.max(3, Math.min(introDurationSec, 10))
-    const accent = (accentColor.startsWith("#") ? accentColor.slice(1) : accentColor) || "1db954"
+    // The color comes from unvalidated LLM output — anything that isn't 6-char
+    // hex (3-char shorthand, "teal", "rgb(...)") would crash the Python int()
+    // parse and kill the whole intro_render job.
+    let accent = (accentColor || "").replace(/^#/, "").trim()
+    if (/^[0-9a-fA-F]{3}$/.test(accent)) accent = accent.split("").map(c => c + c).join("")
+    if (!/^[0-9a-fA-F]{6}$/.test(accent)) accent = "1db954"
 
     // 1. Generate overlay PNG with Python PIL
     const overlayPng = path.join(tmpDir, "overlay.png")
@@ -108,10 +113,14 @@ export async function renderIntro(input: IntroRenderInput): Promise<string> {
       `[darkbg][ovl]overlay[out]`,
     ].join(";")
 
+    // -pix_fmt yuv420p and -r 30 are REQUIRED: the filtergraph runs in RGBA, so
+    // without them libx264 picks yuv444p (High 4:4:4) at the source clip's fps —
+    // and assembleFullVideo concatenates this intro with the yuv420p/30fps
+    // b-roll via `-c copy`, which corrupts playback on parameter mismatch.
     execSync(
       `ffmpeg -y -i "${srcLocal}" -loop 1 -i "${overlayPng}" -t ${dur} ` +
       `-filter_complex "${fg}" -map "[out]" ` +
-      `-c:v libx264 -preset fast -crf 20 -movflags +faststart "${outputPath}"`,
+      `-c:v libx264 -preset fast -crf 20 -pix_fmt yuv420p -r 30 -movflags +faststart "${outputPath}"`,
       { timeout: INTRO_RENDER_TIMEOUT_MS, stdio: "pipe" }
     )
 

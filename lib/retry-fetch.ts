@@ -11,6 +11,9 @@ export async function fetchWithRetry(
       if (res.ok || i === retries) return res
       if (res.status === 429 || res.status >= 500) {
         lastError = new Error(`HTTP ${res.status}`)
+        // Undici keeps the connection reserved until the body is consumed or
+        // cancelled — abandoned retry bodies would pin sockets in the pool.
+        await res.body?.cancel().catch(() => {})
         await new Promise(r => setTimeout(r, baseDelayMs * Math.pow(2, i)))
         continue
       }
