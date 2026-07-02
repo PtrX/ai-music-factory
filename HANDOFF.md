@@ -1,82 +1,74 @@
 # HANDOFF — AI Music Factory
-_Stand: 2026-07-01 abend_
+_Stand: 2026-07-02_
 
-> Zuerst lesen: `BEATS2YOUTUBE_CHECKLIST.md`.
+> Zuerst lesen: `BEATS2YOUTUBE_CHECKLIST.md`. Repo ist öffentlich (github.com/PtrX/ai-music-factory).
 
-## Was diese Session gemacht wurde
+## Was diese Session gemacht wurde: Bug-Jagd + 29 Fixes
 
-### 1. Code-Fixes (alle committed + gepusht)
+Kompletter Codebase-Bug-Hunt per Multi-Agent-Workflow (6 Subsystem-Reviewer → adversarialer Verifier pro Finding). Ergebnis: **51 bestätigte Bugs, 3 widerlegte Claims**. Davon **29 gefixt** in drei Commits — alle Highs, alle Mediums, alle 11 Media-Pipeline-Findings:
 
-- **`overnight-batch.ts`**: Query für „Tracks ohne Video" nutzte `audioPath: { not: null }` — `audioPath` ist aber ein nicht-nullable String (Default `""`), Filter griff nie. Jetzt `not: ""`. (`a517e5a`)
-- **Preset-Audio-Upload-Bug** (von Peter gemeldet: „weder Drag & Drop noch Button"): `components/preset-upload-dialog.tsx` hatte trotz UI-Text keine `onDrop`/`onDragOver`-Handler — nie verdrahtet. Gefixt nach Pattern aus `upload-variants-modal.tsx`. Zusätzlich: Analyse-Fehler kamen nur als generisches `"Analysis failed"` an — `lib/preset-analyzer.ts` wirft jetzt spezifische Errors (librosa vs. fehlender API-Key vs. KI-Call), Route gibt sie durch. Browser-verifiziert (Drag&Drop + Upload-Request funktionieren). **Nicht von Peter selbst im echten Browser gegengetestet** — falls der Button bei ihm weiterhin nichts tut, live debuggen. (`b3e5390`)
-- **`intro-renderer.test.ts`**: referenzierte `HYPERFRAMES_RENDER_TIMEOUT_MS`, das beim Hyperframes→PIL-Umbau entfernt/umbenannt wurde (→ `INTRO_RENDER_TIMEOUT_MS`, 120s statt 900s). Blockierte `npm run typecheck`. Gefixt. (`e5550f8`)
-- **Miniplayer-Features aus der 2026-06-24-Session nachträglich im Browser verifiziert**: Play/Pause, Favorite-Klick, Copy-Button, Rating-Slider — alle funktionieren (keine Code-Änderung nötig, nur Verifikation).
+### `00e64e9` — 6 Pipeline-Bugs (High + Zombie-States)
+- **Retry-Duplikate**: `handleMusicJob` überspringt Dateien, deren Track-Row schon aus einem früheren Versuch existiert (Match: `providerAudioId`, Fallback `providerTaskId`+Index). Vorher: doppelte Tracks → doppelte YouTube-Uploads. Telegram-Karten nur noch für in DIESEM Lauf erstellte Tracks.
+- **Track-Karten kamen nie an**: `sendTrackCard` baute die Audio-URL ohne Projekt-Ordner-Segment (immer 404). Jetzt via `projectFileUrl()` + `ok:false`-Check mit Text-Fallback.
+- **„🎬 Generate Video"-Button** (Telegram): legte nur die VideoJob-Row an, enqueued jetzt wirklich `intro_render` (+ Score-/DNA-Preconditions).
+- **Cancelled VideoJobs**: Worker claimt VideoJobs bedingt (`updateMany` mit Status-Filter) — abgebrochene/rejected Jobs werden nicht mehr wiederbelebt, nach Freigabe abgelehnte nicht hochgeladen.
+- **Variant-Zombies**: terminale music/analyze-Fehler setzen Variant auf `failed`; Startup-Sweep `reconcileVariants()`.
+- **Projekt-DELETE**: erst DB-Row (Cascade), dann Dateien — vorher konnte ein Fehlschlag Dateien vernichten und Rows zurücklassen.
 
-### 2. Security: geleaktes Passwort gefunden, gefixt, rotiert
+### `5df64a0` — 12 Medium-Findings
+- **Auto-Chain aktiviert**: `maybeQueueMusicJob` wird nach Lyrics-/Prompt-Jobs aufgerufen → **neue Projekte generieren automatisch Musik (= Suno-Credits) sobald Lyrics+Prompt fertig sind**. Falls unerwünscht: die zwei Aufrufe in `worker/index.ts` (nach `markDone` in `handleLyricsJob`/`handlePromptJob`) entfernen.
+- **Telegram-Webhook verlangt Secret** (`x-telegram-bot-api-secret-token`, fail closed). Setup-Route übergibt `secret_token`, Poller schickt den Header mit. → siehe „Sofort nötig" unten.
+- sunoapi.org: `SENSITIVE_WORD_ERROR` = terminal (vorher 15-min-Polling), `CALLBACK_EXCEPTION` wird über vorhandene Tracks aufgelöst, echte Fehlermeldung in `lastError`/Telegram-Alert.
+- Telegram-Lib: alle Calls durch `tgCall` (loggt `ok:false` — 4xx waren stumm), Legacy-Markdown-Escaper.
+- `/generate` (Telegram) baut echten music_api-Payload aus Prompt-/Lyrics-Dateien statt `{}`.
+- Overnight-Batch zählt `processing` statt nonexistentem `rendering` (Batch brach mitten im letzten Render ab).
+- Audio-Route: boundary-aware Traversal-Guard + RFC-korrektes Range-Handling.
+- External-API: variantCount-Clamp auf 5 (6–10 crashte), 400 bei kaputtem JSON, strukturierter 500 mit `projectId`.
+- Frontend: Error-Banner auf Projektseite (Mutation-Fehler waren unsichtbar), Favoriten-Stern ent-togglebar + Revert bei HTTP-Fehlern.
 
-Vor der geplanten Öffentlichmachung des GitHub-Repos: Sicherheits-Scan fand ein **im Klartext committetes Produktions-Postgres-Passwort** in `docs/superpowers/specs/2026-06-23-migration-agent-runbook.md` (im aktuellen `main`-Branch, nicht nur alte Historie).
+### `344c5e3` — 11 Media-Pipeline-/Client-Bugs (inline nachverifiziert, alle echt)
+- **Intro-Encode `-pix_fmt yuv420p -r 30`**: RGBA-Filtergraph ließ libx264 yuv444p wählen → `-c copy`-Concat mit yuv420p-B-Roll = korruptes Endvideo. ⚠️ **Alte Intros in `storage/` haben noch das kaputte Format — betroffene Videos neu rendern.**
+- **Flash-Cut**: exakt 1 weißer Frame, Haupt-Clip um 1/30s gekürzt (vorher +2 Frames Drift pro Flash-Cut, kumulativ).
+- **Rejected Clips** bleiben rejected (Download-Pfad prüfte `isRejected` nicht — Reject-Button war wirkungslos).
+- Segment-Länge per ffprobe statt gerundeter API-Ganzzahl; `-t 0`-Guard (leeres Video wurde „ready"); leere Sections crashen `buildDirectives` nicht mehr; LLM-Farbvalidierung; Gemini→OpenRouter-Fallthrough im Preset-Analyzer; generic-http validiert Job-ID + Status-Vokabular; `external-auth` header-only + constant-time; retry-fetch cancelt Response-Bodies.
 
-- Datei bereinigt, Passwort durch Platzhalter ersetzt. (`6c2a87f`)
-- **Passwort in Produktion rotiert**: `.env` auf CT 100 aktualisiert, `ALTER USER amf WITH PASSWORD ...` direkt in Postgres, alle Container (`web`, `worker`, `telegram-poller`, `db`) neugestartet.
-- Verifiziert: `/api/projects` → 200, keine Fehler in Logs. Kein spürbarer Ausfall.
-- Alter Passwort-Wert bleibt in Git-Historie sichtbar, ist aber seit der Rotation wertlos — Historie wurde bewusst **nicht** umgeschrieben (kein Force-Push nötig).
-- **Merksatz für nächstes Mal**: vor jedem „Repo public machen" `git log --all -p | grep -i password` (o. ä.) laufen lassen, nicht nur den aktuellen Working Tree prüfen.
+## Sofort nötig (Deployment-Auswirkungen!)
 
-### 3. Repo öffentlich gemacht + Public-Readiness-Audit
+1. **`TELEGRAM_WEBHOOK_SECRET` auf CT 100 setzen** (`openssl rand -hex 32`) — ohne die Variable lehnt der Webhook ALLE Updates ab (fail closed) und der Poller beendet sich mit Fehlermeldung. Lokal ist sie schon in `.env.local` generiert. Bei echtem Webhook danach einmal `/api/telegram/setup` aufrufen.
+2. **Hermes auf `x-api-key`-Header umstellen** — `?api_key=` Query-Parameter wird nicht mehr akzeptiert (stand in Access-Logs).
+3. **Image-Rebuild auf CT 100** (Code ist ins Image gebacken) — erst nach Punkt 1+2.
+4. **Auto-Chain-Verhalten prüfen** (siehe `5df64a0` oben): neue Projekte verbrauchen jetzt automatisch Suno-Credits. Bewusste Design-Entscheidung laut Code-Kommentar, aber Peter sollte es einmal absegnen.
 
-- `github.com/PtrX/ai-music-factory` ist seit 2026-07-01 öffentlich.
-- Vollständiger Security-/Best-Practices-Audit durchgeführt: keine weiteren Secrets in History (breite Suche nach Gemini/Google-OAuth/GitHub/Anthropic/OpenRouter/Telegram-Key-Mustern — alle sauber), Shell-Injection-Stellen (`execSync` mit User-Input) geprüft — `slugify()` reduziert Titel/Slugs sicher auf `[a-z0-9-]`, Track-Titel im Intro-Renderer gehen sicher über `JSON.stringify` als Python-Literal statt direkt in die Shell. Path-Traversal-Guard in `/api/audio/[...path]` vorhanden.
-- Ergänzt: `LICENSE` (MIT, vorher keine Lizenz — rechtlich „alle Rechte vorbehalten" trotz Open-Source-Bewerbung), `package.json` `license`-Feld, README-Hinweis „Single-User-Tool ohne Auth-Layer, nicht fürs offene Internet gedacht", `.env.example` um alle tatsächlich genutzten, aber fehlenden Env-Vars ergänzt (`GEMINI_API_KEY`, `YOUTUBE_CLIENT_ID/SECRET`, `PEXELS_API_KEY`, `PIXABAY_API_KEY`, `SUNOAPI_ORG_*`, `EXTERNAL_API_KEY`, u.a.). (`30e4a3d`)
-- Alles gepusht, `main` ist synchron mit `origin/main`.
+## Offene Punkte
 
-### 4. Release: YouTube-Playlist + SoundCloud-Album „Дорога домой"
-
-- **YouTube-Playlist „AI Music Factory — Afro House Album"** (`PLHlWOLVWji-o`, öffentlich): 44 hochgeladene Afro-Videos auf 7 Songs verdichtet zu 20 Tracks (Top 2–3 beste Takes pro Song, priorisiert nach Peters ★-Favoriten + höchsten KI-Scores), in sinnvoller Reihenfolge sortiert (118-BPM-Opener-Suite, danach 123 BPM mit Key-Variation, Finale mit Favorit + Top-Score-Track).
-- **Album-Cover generiert** (`storage/album-cover-road-home.png`, an Peter gesendet): Silhouette auf einer Straße, die von russischer Birken-Steppe in afrikanische Savanne übergeht.
-- **Album-Titel**: „Дорога домой" (kyrillisch, auf Peters Wunsch — nicht „The Road Home" übersetzt).
-- **SoundCloud-Album manuell mit Peter zusammen aufgesetzt** (Browser-Automation stieß an harte Grenzen: SoundClouds Datei-Upload-Widget hat kein für Automation greifbares `<input type=file>`, musste Peter selbst machen; danach Metadaten/Tracknamen per Chrome-Automation ausgefüllt). Alle 20 Tracknamen auf Kyrillisch umbenannt (Songtitel kyrillisch, Mix-Namen wie „Soulful Horizon Mix" unverändert englisch gelassen — explizite Korrektur von Peter, nicht übersetzen). **Ob Peter final „Hochladen" geklickt hat, ist nicht zweifelsfrei bestätigt** — SoundCloud-Tab wurde irgendwann geschlossen, vermutlich nach dem Klick, aber nicht verifiziert.
-- 20 Audio-Dateien wurden in Album-Reihenfolge durchnummeriert und an Peter geschickt (`album-export.tar.gz`, temporär in `/private/tmp/...`, nicht im Repo).
-
-### 5. Bekannter, noch offener Bug: 3× dasselbe Video auf YouTube
-
-Track `track_a1` („Река за горами" / „Mountain River Anthem") wurde versehentlich **3× identisch** hochgeladen (`4ZJQxRZ0ZGo`, `SBGXt4xR2qY`, `e8PCbGnPhx0`) — technischer Retry-Bug beim Upload, nicht Peters Fehler. Nur `4ZJQxRZ0ZGo` ist in der Playlist. Ein **Background-Task-Chip wurde für Peter erstellt** (`task_e2b5494b`, „Delete duplicate YouTube upload of track_a1") — **Stand jetzt (2026-07-01 abend) noch nicht ausgeführt**, beide Duplikate sind noch live (verifiziert per oEmbed-Check, beide → 200).
-
-### 6. Strategischer Brainstorm + Shorts-Factory-Handoff
-
-- Auf Peters Frage „wie kann AI Music Factory verbessert werden" 5 Verbesserungsvorschläge diskutiert, größter Hebel: **automatische Kuration** (Top-N pro Song statt aller Varianten rendern/hochladen — „Один" hat z. B. 18 Versionen). Konkreter Feature-Vorschlag: neues `curationStatus`-Feld auf `Track`, `overnight-batch.ts` rendert standardmäßig nur `"video-ready"`-Tracks. **Noch nicht implementiert**, nur besprochen.
-- **`SHORTS-FACTORY-HANDOFF.md`** erstellt (Projekt-Root) — vollständiges Produktionspaket im Format des Schwesterprojekts `shorts_factory` (`/Users/peter/claude_code/shorts_factory`, konsumiert `assets/viral-playbook.md`-Format). Zeigt AI Music Factory als „Ich habe eine KI gebaut, die nachts Alben macht"-Short: Hook basiert auf echtem, verifiziertem 15-Min-→-2-Sek-Renderzeit-Sprung (Hyperframes→PIL-Umbau). Enthält Drehbuch, Shotlist, Voiceover-Settings, Bild-Prompts, Schnittanweisungen, Hashtags, GitHub-Repo-Promo (Link + Pin-Kommentar-Text) und einen echten, unveränderten Suno-Style-Prompt als Beispiel. **Bereit zur Übergabe an `shorts_factory`**, noch nicht dort eingespielt.
+- **~18 Low-Findings** aus der Bug-Jagd noch offen (stille Frontend-Fehler in Dashboard/Preset-Dialog/Rating-Form, `/tracks` zeigt nur 6-stellige ID-Suffixe aber `/approve` braucht volle ID, Poller-Busy-Loop bei 409, suno-gcui Default-URL = eigene App, system-status prüft falsche Env-Vars, YouTube-OAuth-Fallback-URL). Details: Workflow-Output `/private/tmp/claude-501/.../tasks/w99wl5iec.output` (temporär!) oder neu jagen.
+- **`CLAUDE.md` im Root ist untracked** — wurde 2026-07-02 14:27 NICHT von dieser Session erstellt (Peter oder Parallel-Session?). Inhalt sieht korrekt aus. Entscheiden: committen oder löschen.
+- Aus der Vorsession noch offen: YouTube-Duplikate von `track_a1` löschen (Task-Chip `task_e2b5494b`), SoundCloud-Album „Дорога домой" final bestätigen, Preset-Upload-Fix von Peter selbst testen, `SHORTS-FACTORY-HANDOFF.md` an shorts_factory übergeben, Kuration-Feature (`curationStatus`) planen.
 
 ## Aktueller Systemstand
 
-- **Branch**: `main`, alles committed **und gepusht** — `origin/main` ist synchron.
-- **Produktion (CT 100)**: läuft mit rotiertem Postgres-Passwort, verifiziert gesund.
-- **GitHub-Repo**: öffentlich, `LICENSE` + vollständige `.env.example` + Security-Hinweis im README.
-- **CT 100 RAM**: 10240 MB.
+- **Branch `main`, alles committed, NICHT gepusht** (3 neue Commits: `00e64e9`, `5df64a0`, `344c5e3`). Push erst nach Peters Review ok — enthält Breaking Changes (Webhook-Secret, Hermes-Header).
+- Typecheck grün, alle 8 Tests in `tests/` grün. UI-Änderungen (Error-Banner, Stern) nicht browser-verifiziert (leere Dev-DB).
+- Produktion (CT 100) läuft noch auf ALTEM Stand — Rebuild ausstehend (siehe „Sofort nötig").
 
-## Nächste Schritte (in sinnvoller Reihenfolge)
-
-1. **Duplikat-Videos löschen** — Task-Chip `task_e2b5494b` ist bereit, Peter muss ihn nur starten (löscht `SBGXt4xR2qY` + `e8PCbGnPhx0`, räumt VideoJob-DB-Einträge auf).
-2. **SoundCloud-Veröffentlichung bestätigen** — mit Peter klären, ob „Дорога домой" wirklich live ist; falls nicht, Chrome-Automation-Session fortsetzen (Album-Info-Formular war komplett ausgefüllt, nur „Hochladen"-Klick fehlte ggf. noch).
-3. **Preset-Upload-Fix von Peter selbst im Browser testen** (siehe Punkt 1 oben) — bisher nur headless verifiziert.
-4. **`SHORTS-FACTORY-HANDOFF.md` an `shorts_factory`-Projekt übergeben**, dort mit dessen `KICKOFF-PROMPT.md`-Muster starten, sobald Peter Screen-Recordings von Dashboard/Telegram/Suno-Player gemacht hat (das Playbook geht von echten Aufnahmen aus, nicht KI-B-Roll).
-5. **Kuration-Feature** (`curationStatus`) als richtigen Plan ausarbeiten, falls Peter das priorisiert — bisher nur Konzept.
-6. Rest aus der Checklist (SRT/Captions, Clip-Pool-Diversität, `detectImpactBeats` toter Code) — niedrige Priorität, siehe `BEATS2YOUTUBE_CHECKLIST.md`.
-
-## Gotchas
+## Gotchas (neu diese Session)
 
 | Was | Detail |
 |---|---|
-| SSH zu Proxmox | `ssh proxmox-prod` (Host: 192.168.1.15) |
-| CT 100 direkt | `pct exec 100 -- bash -c '...'` |
-| Postgres-Passwort ändern | NICHT nur `.env` — auch `ALTER USER amf WITH PASSWORD '...'` direkt in Postgres, sonst laufen Web/Worker nach Neustart gegen falsches Passwort. SQL-Befehle mit Sonderzeichen über eine Datei einspielen (`pct push` + `docker compose exec -T db psql -f`/stdin), nicht durch 4 verschachtelte Shells quoten — bricht garantiert. |
-| NAS-Synology | 192.168.1.10 |
-| YouTube Token | `/mnt/nas/amf-storage/youtube-tokens.json` → im Container `/data/storage/youtube-tokens.json`. Scopes: `youtube.upload` + `youtube.force-ssl` — reicht auch für `playlists.insert`/`playlistItems.insert` (kein Re-Auth nötig für Playlist-Features). |
-| YouTube Playlist-API | `position`-Feld bei `playlistItems.insert` NICHT explizit setzen, wenn mehrere Items nacheinander eingefügt werden — führt zu Sync-Bugs/400ern, sobald ein Insert fehlschlägt. Einfach ohne `position` anhängen (API hängt automatisch ans Ende). |
-| Prisma Schema | Local = sqlite, Docker-Build patcht auf postgresql per `sed` |
-| force-dynamic | Alle API-Routes haben `export const dynamic = "force-dynamic"` |
-| VideoJob "ready" | Status `"ready"` = Freigabe, nicht `"done"` |
-| tsx im Docker | Code ist ins Image gebacken. Immer rebuild, nicht nur restart. |
-| Intro-Render | PIL + ffmpeg statt Hyperframes/Chrome — siehe Memory `no-hyperframes` |
-| Disk CT 100 | 30 GB; nach mehreren Rebuilds: `docker builder prune -f` |
-| SoundCloud-Automation | Datei-Upload-Widget (Audio + Cover) hat KEIN für Browser-Automation greifbares `<input type=file>` — Datei-Auswahl muss der Nutzer selbst machen. Textfelder (Titel, Tags, Beschreibung, Tracknamen) sind ebenfalls nicht über `read_page`/`find` auffindbar (leere Accessibility-Tree-Region) — nur über Pixel-Koordinaten + `computer`-Tool klick-/tippbar. |
-| Shorts-Factory-Projekt | `/Users/peter/claude_code/shorts_factory` — konsumiert `assets/viral-playbook.md` (festes Format: Idee-Block → Produktionspaket) + `KICKOFF-PROMPT.md`. Kein freies Briefing-Format. |
+| ffmpeg concat `-c copy` | Alle Teile müssen pix_fmt/fps/Auflösung teilen. RGB-Filtergraph → libx264 wählt yuv444p, wenn kein `-pix_fmt` gesetzt ist. Immer explizit `-pix_fmt yuv420p -r 30`. |
+| lavfi `color` mit `d=0.04` | erzeugt bei r=30 ZWEI Frames, nicht einen — `-frames:v 1` verwenden. |
+| Telegram-API-Fehler | HTTP 400 mit `ok:false` — `fetch` wirft NICHT. Immer Body prüfen (jetzt zentral in `tgCall`). |
+| Workflow-Subagenten | Erben das Session-Modell (hier Fable 5!) — mechanische Stages explizit mit `model`/`effort`-Override billiger machen. Resume-Cache matcht das längste unveränderte Präfix; bei parallelen Stages bricht er wegen nondeterministischer Reihenfolge → Re-Runs. 60-Agenten-Lauf ≈ 3 Mio. Tokens. |
+| `TELEGRAM_WEBHOOK_SECRET` | Webhook + Poller brauchen dieselbe Variable, sonst Totalausfall der Telegram-Integration (bewusst fail closed). |
+
+## Gotchas (weiter gültig aus Vorsessions)
+
+| Was | Detail |
+|---|---|
+| SSH Proxmox / CT 100 | `ssh proxmox-prod` (192.168.1.15), dann `pct exec 100 -- bash -c '...'`. NAS: 192.168.1.10. |
+| tsx im Docker | Code ins Image gebacken → immer rebuild, nie nur restart. Disk 30 GB: `docker builder prune -f`. |
+| Prisma | Local sqlite, Docker-Build patcht per `sed` auf postgresql. Vor DB-Arbeit: `npx prisma migrate status`. |
+| YouTube Token | `/mnt/nas/amf-storage/youtube-tokens.json` → Container `/data/storage/...`. Scopes upload + force-ssl. |
+| VideoJob `"ready"` | = wartet auf Freigabe, nicht „fertig". |
+| Intro-Render | Python PIL + ffmpeg, NICHT Hyperframes/Puppeteer. |
+| YouTube-Titel | `Songtitel (Version/Remix) - PtrX`, Autor PtrX. |
