@@ -706,6 +706,18 @@ export default function ProjectDetail() {
         </div>
       </div>
 
+      {error && (
+        <div
+          role="alert"
+          className="mb-4 flex items-start justify-between gap-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          <span>{error}</span>
+          <button onClick={() => setError(null)} aria-label="Dismiss" className="font-bold leading-none">
+            ×
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1 space-y-4">
           <Card>

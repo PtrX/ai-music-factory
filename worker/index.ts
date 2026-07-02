@@ -141,6 +141,7 @@ async function handleLyricsJob(job: { id: string; payload: string; variantId: st
   })
 
   await markDone(job.id, { lyricsPath })
+  await maybeQueueMusicJob(variantId)
 }
 
 async function handlePromptJob(job: { id: string; payload: string; variantId: string | null }) {
@@ -192,6 +193,8 @@ async function handlePromptJob(job: { id: string; payload: string; variantId: st
   })
 
   await markDone(job.id, { promptPath })
+  // Cover prompts return early above — only the suno-prompt path may auto-chain
+  await maybeQueueMusicJob(variantId)
 }
 
 async function handleMusicJob(job: { id: string; payload: string; variantId: string | null }) {
@@ -240,7 +243,7 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
 
   // Unified polling loop — sunoapi.org needs up to 15 minutes under load
   const maxAttempts = 180
-  let status = { status: "pending" }
+  let status: { status: string; error?: string } = { status: "pending" }
   let lastLoggedStatus = ""
   for (let i = 0; i < maxAttempts; i++) {
     status = await provider.getStatus(jobId)
@@ -250,7 +253,7 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
     }
     if (status.status === "completed") break
     if (status.status === "failed") {
-      throw new Error("Music generation failed")
+      throw new Error(status.error ? `Music generation failed: ${status.error}` : "Music generation failed")
     }
     await new Promise((resolve) => setTimeout(resolve, 5000))
   }

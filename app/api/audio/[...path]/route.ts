@@ -6,7 +6,7 @@ import * as fsSync from "fs"
 import * as path from "path"
 
 const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
-const STORAGE_ROOT = path.join(STORAGE_BASE, "projects")
+const STORAGE_ROOT = path.resolve(STORAGE_BASE, "projects")
 
 const MIME_TYPES: Record<string, string> = {
   ".mp3": "audio/mpeg",
@@ -36,10 +36,11 @@ export async function GET(
   { params }: { params: { path: string[] } }
 ) {
   try {
-    const filePath = path.join(STORAGE_ROOT, ...params.path)
-
-    // Prevent path traversal
-    if (!filePath.startsWith(STORAGE_ROOT)) {
+    // resolve() normalizes any ".." segments; the path.sep-bounded prefix check
+    // prevents escapes to sibling dirs like "projects-backup" that a bare
+    // startsWith(STORAGE_ROOT) would let through.
+    const filePath = path.resolve(STORAGE_ROOT, ...params.path)
+    if (filePath !== STORAGE_ROOT && !filePath.startsWith(STORAGE_ROOT + path.sep)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
@@ -53,13 +54,31 @@ export async function GET(
     const rangeHeader = req.headers.get("range")
 
     if (rangeHeader) {
-      // Parse "bytes=start-end"
+      // Parse "bytes=start-end" per RFC 9110: "start-", "start-end", "-suffix"
       const match = rangeHeader.match(/bytes=(\d*)-(\d*)/)
-      if (!match) {
-        return new NextResponse("Invalid Range", { status: 416 })
+      const invalidRange = () =>
+        new NextResponse(null, {
+          status: 416,
+          headers: { "Content-Range": `bytes */${fileSize}` },
+        })
+      if (!match || (!match[1] && !match[2])) {
+        return invalidRange()
       }
-      const start = match[1] ? parseInt(match[1], 10) : 0
-      const end = match[2] ? parseInt(match[2], 10) : fileSize - 1
+      let start: number
+      let end: number
+      if (!match[1]) {
+        // Suffix range "-N": last N bytes; longer than the file → whole file
+        const suffixLen = parseInt(match[2], 10)
+        if (suffixLen === 0) return invalidRange()
+        start = Math.max(0, fileSize - suffixLen)
+        end = fileSize - 1
+      } else {
+        start = parseInt(match[1], 10)
+        end = match[2] ? Math.min(parseInt(match[2], 10), fileSize - 1) : fileSize - 1
+      }
+      if (Number.isNaN(start) || start >= fileSize || start > end) {
+        return invalidRange()
+      }
       const chunkSize = end - start + 1
 
       const stream = fsSync.createReadStream(filePath, { start, end })

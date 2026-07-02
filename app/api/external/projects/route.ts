@@ -22,14 +22,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const body = await req.json()
+  let body
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
+  }
   const { title, genre, mood, style, bpm, key: _key, lyrics, variantCount = 2, notifyTelegram = true } = body
 
   if (!title || !genre || !mood || !style) {
     return NextResponse.json({ error: "title, genre, mood, style required" }, { status: 400 })
   }
 
-  const count = Math.min(Math.max(1, Number.isInteger(variantCount) ? variantCount : 2), 10)
+  // Clamp to the labels that actually exist — LABELS[5..9] would be undefined
+  // and crash variant creation (matches the internal route's clamp of 5)
+  const count = Math.min(Math.max(1, Number.isInteger(variantCount) ? variantCount : 2), LABELS.length)
 
   const parsedBpm = bpm != null ? parseInt(String(bpm), 10) : null
   if (parsedBpm !== null && isNaN(parsedBpm)) {
@@ -40,6 +47,10 @@ export async function POST(req: NextRequest) {
   let slug = baseSlug
   let folderPath = ""
   let project: Project | null = null
+  // Everything from here on can partially succeed (project row created, some
+  // jobs enqueued) — return a structured error including projectId so the
+  // caller (hermes) can reconcile instead of blind-retrying into duplicates.
+  try {
   for (let suffix = 0; suffix < 50; suffix++) {
     slug = suffix === 0 ? baseSlug : `${baseSlug}-${suffix}`
     folderPath = await ensureProjectFolder(slug)
@@ -67,13 +78,14 @@ export async function POST(req: NextRequest) {
   if (!project) {
     return NextResponse.json({ error: "Could not create a unique project slug" }, { status: 409 })
   }
+  const created = project
 
   const variants = await Promise.all(
     Array.from({ length: count }, (_, i) => {
       const label = LABELS[i]
       return prisma.variant.create({
         data: {
-          projectId: project.id,
+          projectId: created.id,
           label,
           name: VARIANT_NAMES[label] || `Variant ${label}`,
         },
@@ -121,11 +133,19 @@ export async function POST(req: NextRequest) {
   }
 
   await Promise.all(jobs)
+  } catch (error) {
+    console.error("Create external project error:", error)
+    return NextResponse.json(
+      { error: "Internal error", projectId: project?.id ?? null },
+      { status: 500 }
+    )
+  }
 
   if (notifyTelegram) {
+    // Best-effort — a Telegram outage must not fail an otherwise-successful creation
     await sendTelegramNotification(
-      `🎵 Neues Projekt erstellt: *${title}*\n Genre: ${genre} · ${mood}\n Varianten: ${variantCount}\n[Öffnen](${process.env.NEXT_PUBLIC_APP_URL}/projects/${project.id})`
-    )
+      `🎵 Neues Projekt erstellt: *${title}*\n Genre: ${genre} · ${mood}\n Varianten: ${count}\n[Öffnen](${process.env.NEXT_PUBLIC_APP_URL}/projects/${project.id})`
+    ).catch((e) => console.error("Telegram notification failed:", e))
   }
 
   return NextResponse.json({ projectId: project.id, variantCount: count, status: "queued" }, { status: 201 })

@@ -91,8 +91,9 @@ async function main() {
 
   const created = await createMissingJobs()
   if (created === 0 && approvedIds.size === 0) {
-    // Check if there are already jobs in the queue
-    const active = await prisma.job.count({ where: { status: { in: ["pending", "rendering"] } } })
+    // Check if there are already jobs in the queue ("processing" is the Job
+    // status the worker actually uses — "rendering" is a VideoJob status)
+    const active = await prisma.job.count({ where: { status: { in: ["pending", "processing"] } } })
     console.log(`[Batch] ${active} Jobs bereits aktiv in der Queue.`)
   }
 
@@ -106,9 +107,11 @@ async function main() {
     try {
       await approveReady()
 
-      // Exit when no more pending/rendering/ready jobs remain
+      // Exit when no more pending/processing/ready jobs remain — a job the
+      // worker is actively executing has Job status "processing", so counting
+      // ["pending", "rendering"] here made the batch exit mid-render.
       const remaining = await prisma.job.count({
-        where: { type: { in: ["intro_render", "video_render", "youtube_upload"] }, status: { in: ["pending", "rendering"] } },
+        where: { type: { in: ["intro_render", "video_render", "youtube_upload"] }, status: { in: ["pending", "processing"] } },
       })
       const readyCount = await prisma.videoJob.count({ where: { status: "ready" } })
 

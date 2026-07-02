@@ -72,12 +72,25 @@ export class SunoApiOrgProvider implements MusicGenerationProvider {
 
     const data = await response.json()
     const status: string = data?.data?.status || ""
+    const errorMessage: string | undefined = data?.data?.errorMessage || undefined
 
     if (status === "SUCCESS") return { id: jobId, status: "completed" }
-    if (status === "CREATE_TASK_FAILED" || status === "GENERATE_AUDIO_FAILED") {
-      return { id: jobId, status: "failed" }
+    // SENSITIVE_WORD_ERROR is a deterministic content-moderation rejection —
+    // mapping it to "processing" made the worker poll for 15 min then time out.
+    if (status === "CREATE_TASK_FAILED" || status === "GENERATE_AUDIO_FAILED" || status === "SENSITIVE_WORD_ERROR") {
+      return { id: jobId, status: "failed", error: errorMessage }
     }
-    // PENDING | TEXT_SUCCESS | FIRST_SUCCESS = still processing
+    // CALLBACK_EXCEPTION: the app polls — the callback is only an ack sink, so
+    // a failed callback (e.g. localhost APP_URL) doesn't mean generation failed.
+    // Completed if tracks exist, failed otherwise.
+    if (status === "CALLBACK_EXCEPTION") {
+      const tracks: SunoApiTrack[] = data?.data?.response?.sunoData || []
+      return tracks.some((t) => t.audioUrl)
+        ? { id: jobId, status: "completed" }
+        : { id: jobId, status: "failed", error: errorMessage ?? "callback exception without audio" }
+    }
+    // PENDING | TEXT_SUCCESS | FIRST_SUCCESS (and unknown new intermediate
+    // statuses) = still processing
     return { id: jobId, status: "processing" }
   }
 

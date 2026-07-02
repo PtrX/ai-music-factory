@@ -13,6 +13,9 @@ const TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
 const WEBHOOK = `${APP_URL}/api/telegram/webhook`
 const API = `https://api.telegram.org/bot${TOKEN}`
+// The webhook route fails closed without a matching secret header — the
+// poller must send the same secret Telegram would send via setWebhook.
+const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET
 
 async function getUpdates(offset: number, timeout: number): Promise<any[]> {
   const res = await fetch(`${API}/getUpdates?offset=${offset}&timeout=${timeout}`)
@@ -47,6 +50,10 @@ async function main() {
     console.error("[TgPoller] TELEGRAM_BOT_TOKEN missing — exiting")
     process.exit(1)
   }
+  if (!WEBHOOK_SECRET) {
+    console.error("[TgPoller] TELEGRAM_WEBHOOK_SECRET missing — the webhook route rejects all updates without it. Generate one (openssl rand -hex 32), add it to .env.local, restart. Exiting")
+    process.exit(1)
+  }
   // A webhook and getUpdates are mutually exclusive — make sure no webhook is set.
   await fetch(`${API}/deleteWebhook`).catch(() => {})
   await registerCommands()
@@ -73,7 +80,10 @@ async function main() {
         try {
           await fetch(WEBHOOK, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-telegram-bot-api-secret-token": WEBHOOK_SECRET,
+            },
             body: JSON.stringify(update),
           })
         } catch (e) {

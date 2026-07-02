@@ -205,11 +205,12 @@ export default function Dashboard() {
     const next = !current
     setFavoriteOverride(prev => ({ ...prev, [trackId]: next }))
     try {
-      await fetch(`/api/tracks/${trackId}/favorite`, {
+      const res = await fetch(`/api/tracks/${trackId}/favorite`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isFavorite: next }),
       })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
     } catch {
       // revert
       setFavoriteOverride(prev => ({ ...prev, [trackId]: current }))
@@ -434,7 +435,7 @@ export default function Dashboard() {
 
                                     {/* Star */}
                                     <button
-                                      onClick={(e) => toggleFavorite(e, t.id, t.isFavorite)}
+                                      onClick={(e) => toggleFavorite(e, t.id, isFav)}
                                       className="flex-shrink-0 text-base leading-none"
                                       title={isFav ? "Favorit entfernen" : "Als besten Track markieren"}
                                       style={{ color: isFav ? "#f59e0b" : "var(--text-muted)", opacity: isFav ? 1 : 0.35 }}

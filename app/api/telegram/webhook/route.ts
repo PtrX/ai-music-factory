@@ -1,6 +1,9 @@
 export const dynamic = "force-dynamic"
 
 import { NextRequest, NextResponse } from "next/server"
+import * as fs from "fs/promises"
+import * as path from "path"
+import { timingSafeEqual } from "crypto"
 import { prisma } from "@/lib/db"
 import { enqueue } from "@/lib/queue"
 import {
@@ -13,7 +16,24 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
 
+// Telegram echoes the secret_token passed to setWebhook in this header; the
+// local poller sends the same header. Without the check anyone who finds the
+// URL can spoof chat_id and drive approve/reject/generate.
+function webhookSecretValid(req: NextRequest): boolean {
+  const expected = process.env.TELEGRAM_WEBHOOK_SECRET
+  const got = req.headers.get("x-telegram-bot-api-secret-token")
+  if (!expected || !got) return false // fail closed when unconfigured
+  const a = Buffer.from(got)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
 export async function POST(req: NextRequest) {
+  if (!webhookSecretValid(req)) {
+    // 200 so Telegram doesn't retry or disable the webhook
+    return NextResponse.json({ ok: true })
+  }
+
   const update = await req.json()
 
   // ── Inline keyboard button press ─────────────────────────────────────
@@ -361,16 +381,44 @@ async function handleGenerateCmd(projectId: string | undefined) {
   })
   if (!project) { await sendTelegramNotification(`Projekt \`${projectId}\` nicht gefunden.`); return }
 
-  const { enqueue } = await import("@/lib/queue")
+  // The worker's music_api handler requires title/stylePrompt/lyrics in the
+  // payload — build it from the variant's files, same as the generate-music
+  // route, instead of enqueueing an empty payload the worker rejects.
+  const isInstrumental = project.vocalType === "instrumental"
   let queued = 0
+  let skipped = 0
   for (const variant of project.variants) {
     if (variant.status === "completed") continue
-    await enqueue("music_api", variant.id, {})
+    if (!variant.sunoPromptPath || (!variant.lyricsPath && !isInstrumental)) { skipped++; continue }
+
+    const existing = await prisma.job.findFirst({
+      where: { variantId: variant.id, type: "music_api", status: { in: ["pending", "processing"] } },
+    })
+    if (existing) { skipped++; continue }
+
+    const [lyrics, promptContent] = await Promise.all([
+      variant.lyricsPath
+        ? fs.readFile(path.join(project.folderPath, variant.lyricsPath), "utf-8")
+        : Promise.resolve(""),
+      fs.readFile(path.join(project.folderPath, variant.sunoPromptPath), "utf-8"),
+    ])
+    const negMatch = promptContent.match(/^Negative Prompt:\s*(.+)$/im)
+    const negativePrompt = negMatch ? negMatch[1].trim() : ""
+    const stylePrompt = promptContent.replace(/\n*Negative Prompt:.*$/im, "").trim()
+
+    await enqueue("music_api", variant.id, {
+      title: project.title,
+      stylePrompt,
+      negativePrompt,
+      lyrics,
+    })
     queued++
   }
+
+  const skippedNote = skipped > 0 ? `\nℹ️ ${skipped} übersprungen (Prompt/Lyrics fehlen oder Job läuft schon).` : ""
   await sendTelegramNotification(
     queued > 0
-      ? `▶️ ${queued} Jobs für *${project.title}* in die Queue gestellt.`
-      : `ℹ️ Alle Varianten von *${project.title}* sind bereits abgeschlossen.`
+      ? `▶️ ${queued} Jobs für *${project.title}* in die Queue gestellt.${skippedNote}`
+      : `ℹ️ Keine Varianten von *${project.title}* zu generieren.${skippedNote}`
   )
 }

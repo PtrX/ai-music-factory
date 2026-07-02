@@ -4,35 +4,41 @@ import { projectFileUrl } from "@/lib/storage"
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID
 
-export async function sendTelegramNotification(text: string): Promise<void> {
-  if (!BOT_TOKEN || !CHAT_ID) return
+// Telegram signals errors as HTTP 4xx with ok:false — fetch does NOT throw
+// for that, so every call must check the body or failures vanish silently.
+async function tgCall(method: string, body: object): Promise<boolean> {
+  if (!BOT_TOKEN) return false
   try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: CHAT_ID,
-        text,
-        parse_mode: "Markdown",
-        disable_web_page_preview: false,
-      }),
+      body: JSON.stringify(body),
     })
+    const json = await res.json() as { ok: boolean; description?: string }
+    if (!json.ok) {
+      console.error(`[Telegram] ${method} failed:`, json.description)
+      return false
+    }
+    return true
   } catch (err) {
-    console.error("[Telegram] sendMessage failed:", err)
+    console.error(`[Telegram] ${method} failed:`, err)
+    return false
   }
+}
+
+export async function sendTelegramNotification(text: string): Promise<void> {
+  if (!BOT_TOKEN || !CHAT_ID) return
+  await tgCall("sendMessage", {
+    chat_id: CHAT_ID,
+    text,
+    parse_mode: "Markdown",
+    disable_web_page_preview: false,
+  })
 }
 
 export async function sendTelegramPhoto(photoUrl: string, caption: string): Promise<void> {
   if (!BOT_TOKEN || !CHAT_ID) return
-  try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: CHAT_ID, photo: photoUrl, caption, parse_mode: "Markdown" }),
-    })
-  } catch (err) {
-    console.error("[Telegram] sendPhoto failed:", err)
-  }
+  await tgCall("sendPhoto", { chat_id: CHAT_ID, photo: photoUrl, caption, parse_mode: "Markdown" })
 }
 
 // ── Inline-Keyboard Helpers ───────────────────────────────────────────
@@ -92,49 +98,28 @@ export async function sendTrackCard(params: {
   ].filter(Boolean).join(" · ")
 
   const caption =
-    `🎵 *${params.projectTitle}* — Variant ${params.variantLabel} Track ${params.trackIndex + 1}` +
-    (params.versionName ? ` (${params.versionName})` : "") +
+    `🎵 *${escapeLegacyMarkdown(params.projectTitle)}* — Variant ${params.variantLabel} Track ${params.trackIndex + 1}` +
+    (params.versionName ? ` (${escapeLegacyMarkdown(params.versionName)})` : "") +
     `\n*Score: ${params.scoreTotal ?? "—"}*` +
     (scoreLine ? `  ${scoreLine}` : "") +
-    (params.aiNotes ? `\n_${params.aiNotes.slice(0, 200)}_` : "")
+    (params.aiNotes ? `\n_${escapeLegacyMarkdown(params.aiNotes.slice(0, 200))}_` : "")
 
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendAudio`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: CHAT_ID,
-        audio: audioUrl,
-        caption,
-        parse_mode: "Markdown",
-        reply_markup: buildTrackKeyboard(params.trackId),
-      }),
-    })
-    // Telegram signals errors (e.g. it cannot fetch the audio URL) via ok:false
-    // on an HTTP 400 — fetch does not throw for that, so check explicitly.
-    const json = await res.json() as { ok: boolean; description?: string }
-    if (!json.ok) {
-      console.error("[Telegram] sendTrackCard failed:", json.description)
-      await sendTelegramNotification(fallbackText)
-    }
-  } catch (err) {
-    console.error("[Telegram] sendTrackCard failed:", err)
-    // Fallback to plain text notification
+  const ok = await tgCall("sendAudio", {
+    chat_id: CHAT_ID,
+    audio: audioUrl,
+    caption,
+    parse_mode: "Markdown",
+    reply_markup: buildTrackKeyboard(params.trackId),
+  })
+  if (!ok) {
+    // Fallback to plain text notification (e.g. Telegram couldn't fetch the audio URL)
     await sendTelegramNotification(fallbackText)
   }
 }
 
 export async function answerCallbackQuery(callbackQueryId: string, text: string): Promise<void> {
   if (!BOT_TOKEN) return
-  try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callback_query_id: callbackQueryId, text, show_alert: false }),
-    })
-  } catch (err) {
-    console.error("[Telegram] answerCallbackQuery failed:", err)
-  }
+  await tgCall("answerCallbackQuery", { callback_query_id: callbackQueryId, text, show_alert: false })
 }
 
 export async function editMessageReplyMarkup(
@@ -142,15 +127,11 @@ export async function editMessageReplyMarkup(
   messageId: number
 ): Promise<void> {
   if (!BOT_TOKEN) return
-  try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageReplyMarkup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
-    })
-  } catch (err) {
-    console.error("[Telegram] editMessageReplyMarkup failed:", err)
-  }
+  await tgCall("editMessageReplyMarkup", {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: { inline_keyboard: [] },
+  })
 }
 
 export async function sendJobFailureAlert(
@@ -160,21 +141,15 @@ export async function sendJobFailureAlert(
 ): Promise<void> {
   if (!BOT_TOKEN || !CHAT_ID) return
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
-  const short = error.slice(0, 120).replace(/\n/g, " ")
+  // Error text is arbitrary (may contain * _ ` [) — escape it or the alert
+  // itself fails to parse and the failure notification never arrives.
+  const short = escapeLegacyMarkdown(error.slice(0, 120).replace(/\n/g, " "))
   const text =
     `⚠️ *Job permanent fehlgeschlagen*\n\n` +
     `Typ: \`${type}\`\n` +
     `Fehler: ${short}\n\n` +
     `[Settings öffnen](${appUrl}/settings)`
-  try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: "Markdown", disable_web_page_preview: true }),
-    })
-  } catch (err) {
-    console.error("[Telegram] sendJobFailureAlert failed:", err)
-  }
+  await tgCall("sendMessage", { chat_id: CHAT_ID, text, parse_mode: "Markdown", disable_web_page_preview: true })
 }
 
 export async function sendVideoReadyCard(
@@ -189,7 +164,8 @@ export async function sendVideoReadyCard(
   if (!BOT_TOKEN || !CHAT_ID) return
 
   const version = track.versionName || "Original Mix"
-  const text = `🎬 *Video bereit zur Freigabe*\n\n*${escapeMarkdown(project.title)} — ${escapeMarkdown(version)}*\n\nDas Video wurde gerendert und wartet auf deine Freigabe.`
+  // parse_mode "Markdown" (legacy) — the V2 escaper would leave stray backslashes
+  const text = `🎬 *Video bereit zur Freigabe*\n\n*${escapeLegacyMarkdown(project.title)} — ${escapeLegacyMarkdown(version)}*\n\nDas Video wurde gerendert und wartet auf deine Freigabe.`
 
   const approveRow = [
     { text: "✅ Zu YouTube hochladen", callback_data: `video_approve_${videoJob.id}` },
@@ -261,26 +237,23 @@ export async function sendVideoReadyCard(
     }
   }
 
-  const msgRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: "Markdown", reply_markup: keyboard }),
-  })
-  const msgJson = await msgRes.json() as { ok: boolean; description?: string }
-  if (!msgJson.ok) console.error("[Telegram] sendMessage failed:", msgJson.description)
+  await tgCall("sendMessage", { chat_id: CHAT_ID, text, parse_mode: "Markdown", reply_markup: keyboard })
 }
 
 export async function sendYouTubeLiveCard(youtubeUrl: string, title: string): Promise<void> {
   if (!BOT_TOKEN || !CHAT_ID) return
 
   const text = `🎬 *YouTube Live\\!*\n\n*${escapeMarkdown(title)}*\n\n[Video ansehen](${youtubeUrl})`
-  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: "MarkdownV2" }),
-  })
+  await tgCall("sendMessage", { chat_id: CHAT_ID, text, parse_mode: "MarkdownV2" })
 }
 
+// For parse_mode "MarkdownV2" — escapes the full V2 special-character set.
 function escapeMarkdown(text: string): string {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&")
+}
+
+// For legacy parse_mode "Markdown" — only _ * ` [ are markup there; escaping
+// the V2 set would render literal backslashes before . ! - etc.
+function escapeLegacyMarkdown(text: string): string {
+  return text.replace(/([_*`[])/g, "\\$1")
 }

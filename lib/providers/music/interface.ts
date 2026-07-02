@@ -10,6 +10,8 @@ export type JobStatus = {
   id: string
   status: "pending" | "processing" | "completed" | "failed"
   progress?: number
+  // Provider-supplied failure reason (surfaced in job.lastError / Telegram alerts)
+  error?: string
 }
 
 export type AudioFile = {
