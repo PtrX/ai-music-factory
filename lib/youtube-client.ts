@@ -157,6 +157,21 @@ async function getValidAccessToken(): Promise<string> {
   return tokens.access_token
 }
 
+// Checks the stored refresh token actually works, not just that a token
+// file exists — a revoked/expired refresh token leaves the file in place
+// but every upload fails until re-auth (see /api/auth/youtube).
+export async function checkYouTubeAuth(): Promise<{ connected: boolean; detail?: string }> {
+  const tokens = await loadTokens()
+  if (!tokens) return { connected: false, detail: "login fehlt" }
+  if (tokens.expiry_date >= Date.now() + 60000) return { connected: true }
+  try {
+    await refreshAccessToken(tokens.refresh_token)
+    return { connected: true }
+  } catch {
+    return { connected: false, detail: "Token abgelaufen" }
+  }
+}
+
 // Upload an SRT as a toggleable YouTube caption track.
 // Needs the `youtube.force-ssl` scope (current tokens may only have
 // `youtube.upload`) — the caller logs & continues if this 403s.

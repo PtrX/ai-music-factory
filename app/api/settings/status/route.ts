@@ -1,21 +1,11 @@
 export const dynamic = "force-dynamic"
 
 import { NextResponse } from "next/server"
-import * as fs from "fs/promises"
-import * as path from "path"
-
-const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
+import { checkYouTubeAuth } from "@/lib/youtube-client"
 
 export async function GET() {
   try {
-    const tokenPath = path.join(STORAGE_BASE, "youtube-tokens.json")
-    let youtube = false
-    try {
-      await fs.access(tokenPath)
-      youtube = true
-    } catch {
-      youtube = false
-    }
+    const { connected: youtube } = await checkYouTubeAuth()
 
     const pixabay = !!process.env.PIXABAY_API_KEY
     const gemini = !!process.env.GEMINI_API_KEY || !!process.env.OPENROUTER_API_KEY

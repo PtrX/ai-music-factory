@@ -66,13 +66,12 @@ export default function SettingsPage() {
                   <X className="h-5 w-5 text-red-500" />
                 )}
               </div>
-              {!status?.youtube && (
-                <a href="/api/auth/youtube">
-                  <Button variant="outline" size="sm" className="mt-3">
-                    <Youtube className="h-4 w-4 mr-2" /> Mit YouTube verbinden
-                  </Button>
-                </a>
-              )}
+              <a href="/api/auth/youtube">
+                <Button variant="outline" size="sm" className="mt-3">
+                  <Youtube className="h-4 w-4 mr-2" />
+                  {status?.youtube ? "Neu verbinden" : "Mit YouTube verbinden"}
+                </Button>
+              </a>
             </CardContent>
           </Card>
 

@@ -2,6 +2,7 @@ import { execFile } from "child_process"
 import { promisify } from "util"
 import * as fs from "fs/promises"
 import * as path from "path"
+import { checkYouTubeAuth } from "@/lib/youtube-client"
 
 const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
 const CREDITS_CACHE_PATH = path.join(STORAGE_BASE, "cache", "suno-credits.json")
@@ -116,12 +117,31 @@ async function checkSuno(): Promise<ServiceStatus> {
   return { available: !!process.env.MUSIC_API_URL, label: "Suno", group: "ai" }
 }
 
+const HIGGSFIELD_CACHE_PATH = path.join(STORAGE_BASE, "cache", "higgsfield-credits.json")
+
+async function readCachedHiggsfieldCredits(): Promise<number | null> {
+  try {
+    const raw = await fs.readFile(HIGGSFIELD_CACHE_PATH, "utf-8")
+    const data = JSON.parse(raw)
+    return data?.credits ?? null
+  } catch {
+    return null
+  }
+}
+
+// The `higgsfield` CLI is a real network round-trip and occasionally times
+// out or hiccups transiently — fall back to the last known credits instead
+// of blanking the chip out for what's usually a one-off failure.
 async function checkHiggsfield(): Promise<ServiceStatus> {
   const bin = process.env.HIGGSFIELD_BIN || "higgsfield"
   try {
     const { stdout } = await execFileAsync(bin, ["account", "status", "--json"], { timeout: 10_000 })
     const data = JSON.parse(stdout.trim())
     const credits = data?.credits ?? null
+    if (credits !== null) {
+      await fs.mkdir(path.dirname(HIGGSFIELD_CACHE_PATH), { recursive: true })
+      await fs.writeFile(HIGGSFIELD_CACHE_PATH, JSON.stringify({ credits, updatedAt: Date.now() }), "utf-8")
+    }
     return {
       available: true,
       label: "Higgsfield",
@@ -133,7 +153,11 @@ async function checkHiggsfield(): Promise<ServiceStatus> {
     if (msg.includes("Not authenticated") || msg.includes("Session expired") || msg.includes("auth login")) {
       return { available: false, label: "Higgsfield", detail: "login fehlt", group: "video" }
     }
-    // binary not found
+    const cached = await readCachedHiggsfieldCredits()
+    if (cached !== null) {
+      return { available: true, label: "Higgsfield", detail: `~${Math.ceil(cached)}`, group: "video" }
+    }
+    // binary not found, no prior cache
     return { available: false, label: "Higgsfield", group: "video" }
   }
 }
@@ -149,13 +173,10 @@ async function checkPixabay(): Promise<ServiceStatus> {
 async function checkYouTube(): Promise<ServiceStatus> {
   const hasCredentials = !!(process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET)
   if (!hasCredentials) return { available: false, label: "YouTube", group: "distribution" }
-  const tokenPath = path.join(STORAGE_BASE, "youtube-tokens.json")
-  try {
-    await fs.access(tokenPath)
-    return { available: true, label: "YouTube", detail: "auth", group: "distribution" }
-  } catch {
-    return { available: false, label: "YouTube", detail: "login fehlt", group: "distribution" }
-  }
+  const { connected, detail } = await checkYouTubeAuth()
+  return connected
+    ? { available: true, label: "YouTube", detail: "auth", group: "distribution" }
+    : { available: false, label: "YouTube", detail, group: "distribution" }
 }
 
 export async function getSystemStatus(): Promise<ServiceStatus[]> {
