@@ -65,45 +65,6 @@ function bcp47(language: string | null): string {
   return map[l] ?? (l.length === 2 ? l : "en")
 }
 
-// Auto-queues music_api once both lyricsPath and sunoPromptPath are set on the variant.
-// Called after each lyrics/prompt job so whichever finishes last triggers the music step.
-async function maybeQueueMusicJob(variantId: string) {
-  try {
-    const variant = await prisma.variant.findUnique({
-      where: { id: variantId },
-      include: { project: true },
-    })
-    if (!variant?.lyricsPath || !variant?.sunoPromptPath) return
-    if (!variant.project) return
-
-    const existing = await prisma.job.findFirst({
-      where: { variantId, type: "music_api", status: { in: ["pending", "processing", "completed"] } },
-    })
-    if (existing) return
-
-    const lyricsFullPath = path.join(variant.project.folderPath, variant.lyricsPath)
-    const promptFullPath = path.join(variant.project.folderPath, variant.sunoPromptPath)
-    const [lyrics, promptContent] = await Promise.all([
-      fs.readFile(lyricsFullPath, "utf-8"),
-      fs.readFile(promptFullPath, "utf-8"),
-    ])
-
-    const negMatch = promptContent.match(/^Negative Prompt:\s*(.+)$/im)
-    const negativePrompt = negMatch ? negMatch[1].trim() : ""
-    const stylePrompt = promptContent.replace(/\n*Negative Prompt:.*$/im, "").trim()
-
-    await enqueue("music_api", variantId, {
-      title: variant.project.title,
-      stylePrompt,
-      negativePrompt,
-      lyrics,
-    })
-    console.log(`[Worker] Queued music_api for variant ${variant.label} (${variantId})`)
-  } catch (e) {
-    console.error("[Worker] maybeQueueMusicJob failed (non-fatal):", e)
-  }
-}
-
 async function handleLyricsJob(job: { id: string; payload: string; variantId: string | null }) {
   // Use the DB-persisted variantId rather than re-parsing from payload
   const variantId = job.variantId
@@ -141,7 +102,6 @@ async function handleLyricsJob(job: { id: string; payload: string; variantId: st
   })
 
   await markDone(job.id, { lyricsPath })
-  await maybeQueueMusicJob(variantId)
 }
 
 async function handlePromptJob(job: { id: string; payload: string; variantId: string | null }) {
@@ -193,8 +153,6 @@ async function handlePromptJob(job: { id: string; payload: string; variantId: st
   })
 
   await markDone(job.id, { promptPath })
-  // Cover prompts return early above — only the suno-prompt path may auto-chain
-  await maybeQueueMusicJob(variantId)
 }
 
 async function handleMusicJob(job: { id: string; payload: string; variantId: string | null }) {
@@ -995,8 +953,8 @@ async function processJob() {
 }
 
 // When a music/analyze job fails TERMINALLY, move its Variant out of the
-// transient "generating"/"analyzing" state so the UI (and maybeQueueMusicJob's
-// dedup) doesn't treat it as in-flight forever.
+// transient "generating"/"analyzing" state so the UI doesn't treat it as
+// in-flight forever.
 async function reflectVariantJobFailure(job: { id: string; type: string; payload: string; variantId: string | null }) {
   if (!["music_api", "analyze_imported_track"].includes(job.type)) return
   const fresh = await prisma.job.findUnique({ where: { id: job.id }, select: { status: true } })

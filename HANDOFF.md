@@ -32,9 +32,9 @@ War auf Prod nie gesetzt — der Poller würde beim nächsten Neustart sofort mi
 
 ### 4. YouTube auf Prod neu verbunden
 
-Google OAuth akzeptiert kein `http://192.168.1.31:3000` als Redirect-URI (nur `localhost` erlaubt ohne HTTPS). Ablauf:
+Google OAuth akzeptiert keine Non-Localhost-HTTP-Redirect-URI (nur `localhost` erlaubt ohne HTTPS). Ablauf:
 1. `.env` auf CT 100: `YOUTUBE_REDIRECT_BASE=http://localhost:3000` gesetzt, `docker compose up -d web`.
-2. SSH-Tunnel: `ssh -f -N -L 3000:192.168.1.31:3000 proxmox-prod`.
+2. SSH-Tunnel zur CT-100-IP aufbauen (Kommando siehe `INFRA.md`).
 3. Peter hat `http://localhost:3000/api/auth/youtube` im eigenen Browser geöffnet und den Google-Login/Consent abgeschlossen (das MUSS der Mensch machen, keine Automatisierung möglich).
 4. Nach Bestätigung: `YOUTUBE_REDIRECT_BASE` aus `.env` entfernt, `docker compose up -d web` erneut, Tunnel geschlossen.
 5. Verifiziert: `/api/settings/status` → `youtube: true` (per echtem Refresh-Check, nicht nur Datei-Existenz).
@@ -54,7 +54,7 @@ Google OAuth akzeptiert kein `http://192.168.1.31:3000` als Redirect-URI (nur `l
 
 1. **Deploy-Workflow umstellen**: der alte `tar`-basierte Push-Weg (siehe alte HANDOFF-Version, jetzt in `git log -p` auf CT 100 im Stash) darf nicht wiederkommen — er hat genau diesen Drift verursacht. Ab jetzt: lokal committen → `git push` → auf CT 100 `git pull` → `docker compose build && up -d`. Kein `tar`/`scp`/`pct push` von Code mehr, nur noch für Storage/Assets.
 2. **Hermes `?api_key=`-Frage weiter offen** — `lib/external-auth.ts` akzeptiert seit `344c5e3` nur noch `x-api-key`-Header, kein Query-Param mehr. Kein Hermes-Code lokal auffindbar, der die AMF-External-API aufruft — falls ein externer Caller noch den alten Query-Param nutzt, bricht er mit 401. Laut Peter kein aktuelles Problem (AMF hat eigenen Bot), aber im Hinterkopf behalten falls External-API-Calls plötzlich fehlschlagen.
-3. **Auto-Chain absegnen**: neue Projekte verbrauchen automatisch Suno-Credits (`maybeQueueMusicJob` nach Lyrics-/Prompt-Jobs) — Design-Intention laut Code, bewusste Peter-Entscheidung weiter offen.
+3. ~~Auto-Chain absegnen~~ **Erledigt (2026-07-08)**: Peter hat sich für manuelle Auslösung entschieden — `maybeQueueMusicJob` samt beider Aufrufe aus `worker/index.ts` entfernt. Musik wird nur noch explizit gestartet (UI-Button `generate-music`, Telegram „🎬", `scripts/queue-music-jobs.ts`).
 4. **Betroffene Videos neu rendern**: alte Intros in `storage/` ggf. mit korrupiertem `-c copy`-Concat (vor `344c5e3`) — noch nicht verifiziert, ob welche live auf YouTube sind.
 5. **Restliche ~18 Low-Findings** aus der Vor-Session (kleine Session, ~1h): stille Frontend-Fehler, `/tracks` volle Track-IDs, Poller-Backoff bei 409, suno-gcui Default-URL.
 6. **Kuration-Feature** (`curationStatus` auf Track): größter Hebel gegen zu viele Video-Versionen pro Song, noch nicht als Plan ausgearbeitet.
@@ -68,14 +68,14 @@ Google OAuth akzeptiert kein `http://192.168.1.31:3000` als Redirect-URI (nur `l
 | Prod-Drift durch Tar-Deploys | Der alte `tar`-Push-Workflow committed nie auf CT 100 — Git-Status dort NIE blind vertrauen. **Vor jedem Rebuild**: `git status --short` auf CT 100 prüfen, bei Überraschungen erst `git stash` (nicht `checkout -- .` oder `reset --hard`), dann diffen. |
 | macOS AppleDouble-Müll (`._*`) | Entsteht bei `tar`/`scp` von macOS ohne `COPYFILE_DISABLE=1` oder `tar --disable-copyfile`. Sollten eigentlich in `.gitignore`, aktuell nicht. |
 | `TELEGRAM_WEBHOOK_SECRET` fehlt | Poller exits sofort beim Start (fail-closed) — vor jedem Prod-Rebuild prüfen, ob die Variable in `/opt/amf/.env` gesetzt ist, sonst Telegram-Totalausfall nach Deploy. |
-| YouTube-Reconnect auf Prod | Google akzeptiert kein Non-Localhost-HTTP als Redirect-URI. SSH-Tunnel (`ssh -L 3000:192.168.1.31:3000 proxmox-prod`) + `.env`: `YOUTUBE_REDIRECT_BASE=http://localhost:3000` + `docker compose up -d web`, nach Abschluss wieder entfernen. Login/Consent muss Peter im eigenen Browser machen. |
+| YouTube-Reconnect auf Prod | Google akzeptiert kein Non-Localhost-HTTP als Redirect-URI. SSH-Tunnel + `YOUTUBE_REDIRECT_BASE=http://localhost:3000` — kompletter Ablauf in `INFRA.md`. Login/Consent muss Peter im eigenen Browser machen. |
 | hyperframes/HyperFrames | Auf diesem LXC-Host (kein GPU) nie zum Laufen gebracht, deshalb schon länger auf Python PIL + ffmpeg umgestellt (`lib/intro-renderer.ts`). Dependency + Template-Dateien waren nur Leichen, jetzt entfernt. **Nicht wieder einführen.** |
 
 ## Gotchas (weiter gültig aus Vorsessions)
 
 | Was | Detail |
 |---|---|
-| SSH Proxmox / CT 100 | `ssh proxmox-prod` (192.168.1.15), dann `pct exec 100 -- bash -c '...'`. NAS: 192.168.1.10. CT-100-IP direkt: `192.168.1.31` (kein direkter SSH-Key dafür — nur via `pct exec` über proxmox-prod). |
+| SSH Proxmox / CT 100 | Hosts, IPs und Zugangswege stehen in `INFRA.md` (untracked, nur lokal — Repo ist öffentlich). |
 | tsx im Docker | Code ins Image gebacken → immer rebuild, nie nur restart. Disk 50 GB, ~15 GB frei (Stand heute): `docker builder prune -f` bei Bedarf. |
 | Prisma | Local sqlite, Docker-Build patcht per `sed` auf postgresql. Vor DB-Arbeit: `npx prisma migrate status`. |
 | YouTube Token | `/mnt/nas/amf-storage/youtube-tokens.json` → Container `/data/storage/...`. Scopes upload + force-ssl. |

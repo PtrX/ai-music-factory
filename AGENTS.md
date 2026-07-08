@@ -8,7 +8,7 @@
 
 Vollständige Web-App zur KI-gestützten Musikproduktion. Läuft live auf Proxmox CT 100.
 
-- **URL Produktion:** http://192.168.1.31:3000
+- **URL Produktion:** siehe `INFRA.md` (untracked, nur lokal — Repo ist öffentlich)
 - **Branch:** `main` — alle Änderungen committen und pushen
 - **Stack:** Next.js 14 App Router · TypeScript · Tailwind CSS · Prisma + Postgres (prod) / SQLite (dev) · tsx Worker
 

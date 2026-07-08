@@ -14,7 +14,7 @@ Next.js-App + Worker + Telegram-Poller. Pipeline: Song hochladen/generieren → 
 | Storage | `./storage` (Repo) | NAS `/mnt/nas/amf-storage` (Host) → `/data/storage` (Container) |
 | Code-Änderung | HMR | **Image rebuild, nicht nur restart** — tsx-Code ist ins Image gebacken |
 
-- Zugriff: `ssh proxmox-prod` (192.168.1.15), dann `pct exec 100 -- bash -c '...'`. NAS-Synology: 192.168.1.10.
+- Zugriff auf Prod/NAS (Hosts, IPs, Reconnect-Abläufe): siehe `INFRA.md` — untracked, liegt nur lokal (Repo ist öffentlich).
 - Storage-Pfade IMMER über `STORAGE_BASE_PATH` bzw. die Helpers in `lib/storage` — nie hardcoden (drei Mount-Varianten je Umgebung waren wiederholte Fehlerquelle).
 - Disk CT 100 = 30 GB: nach mehreren Rebuilds `docker builder prune -f`.
 - **Vor jeder DB-/API-Arbeit: `npx prisma migrate status`** auf der jeweiligen Umgebung. Schema-Drift zwischen lokal und CT 100 war ein Top-Bug (`no such column`-Fehler).

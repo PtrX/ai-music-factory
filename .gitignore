@@ -27,6 +27,10 @@ storage/**
 *.tsbuildinfo
 next-env.d.ts
 
+# Infra details (public repo — hosts/IPs stay local)
+INFRA.md
+docs/superpowers/specs/2026-06-23-migration-agent-runbook.md
+
 # AI/IDE internal settings
 .claude/
 .opencode/
