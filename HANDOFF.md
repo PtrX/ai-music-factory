@@ -1,83 +1,86 @@
 # HANDOFF — AI Music Factory
-_Stand: 2026-07-02 abend_
+_Stand: 2026-07-03 abend_
 
 > Zuerst lesen: `BEATS2YOUTUBE_CHECKLIST.md`. Repo ist öffentlich (github.com/PtrX/ai-music-factory).
 
 ## Was diese Session gemacht wurde
 
-### 1. Codebase-Bug-Jagd: 51 bestätigte Bugs, 29 gefixt (3 Commits)
+### 1. YouTube-Token abgelaufen → Status-Check log, echter Fix + volles Prod-Deploy
 
-Multi-Agent-Workflow (6 Subsystem-Reviewer → adversarialer Verifier pro Finding), 11 Kandidaten inline nachverifiziert (100% Trefferquote).
+Auslöser: YouTube-Upload schlug fehl (`invalid_grant`), aber Settings-Seite UND Status-Bar zeigten YouTube weiter grün "verbunden".
 
-**`00e64e9` — 6 Pipeline-Bugs (High + Zombie-States):**
-- Retry-Duplikate: `handleMusicJob` überspringt bereits committete Dateien (Match `providerAudioId`, Fallback taskId+Index) — vorher doppelte Tracks → doppelte YouTube-Uploads. Telegram-Karten nur für Tracks aus DIESEM Lauf.
-- Track-Karten kamen nie an: Audio-URL ohne Projekt-Ordner-Segment (immer 404) → jetzt `projectFileUrl()` + `ok:false`-Check mit Text-Fallback.
-- Telegram „🎬 Generate Video"-Button enqueued jetzt wirklich `intro_render` (+ Score-/DNA-Preconditions).
-- Worker claimt VideoJobs bedingt — cancelled/rejected Jobs werden nicht wiederbelebt, nach Freigabe abgelehnte nicht hochgeladen.
-- Terminale music/analyze-Fehler setzen Variant auf `failed`; Startup-Sweep `reconcileVariants()`.
-- Projekt-DELETE: erst DB-Row (Cascade), dann Dateien.
+- **Root Cause**: `checkYouTube()` (`lib/system-status.ts`) und `/api/settings/status` prüften nur `fs.access(tokenPath)` — Datei existiert auch mit totem Refresh-Token. Fix: `checkYouTubeAuth()` in `lib/youtube-client.ts` versucht bei Ablauf/Fast-Ablauf einen echten Token-Refresh und meldet erst dann `connected: false`.
+- Settings-Seite zeigt jetzt IMMER einen "Neu verbinden"-Button (nicht nur wenn disconnected).
+- **Higgsfield-Credits** verschwanden tageweise (CLI-Timeout/Hiccup ohne Fallback) → jetzt gecacht wie Suno-Credits (`lib/system-status.ts`), zeigt bei transientem Fehler den letzten bekannten Wert (`~1001`).
+- **hyperframes entfernt**: totes `package.json`-Dependency + `templates/hf-template/` + `storage/hf-template/index.html` — Überbleibsel vom abgebrochenen Puppeteer/HyperFrames-Intro-Renderer (ersetzt durch PIL+ffmpeg, siehe `lib/intro-renderer.ts`). War auf Prod UND lokal unabhängig voneinander liegengeblieben.
+- Commit `13b500b`.
 
-**`5df64a0` — 12 Mediums:**
-- **Auto-Chain aktiviert**: `maybeQueueMusicJob` nach Lyrics-/Prompt-Jobs → neue Projekte generieren automatisch Musik (= Suno-Credits!). Rückbau: die zwei Aufrufe nach `markDone` in `handleLyricsJob`/`handlePromptJob` entfernen.
-- **Telegram-Webhook verlangt Secret** (`x-telegram-bot-api-secret-token`, fail closed); Setup-Route + Poller angepasst.
-- sunoapi.org: `SENSITIVE_WORD_ERROR` terminal, `CALLBACK_EXCEPTION` über vorhandene Tracks aufgelöst, echte Fehlermeldung in `lastError`.
-- Telegram-Lib: zentraler `tgCall` (4xx waren stumm), Legacy-Markdown-Escaper; `/generate` baut echten Payload; Overnight-Batch zählt `processing`; Audio-Route Traversal-Guard + Range-Handling; External-API Clamp/Validierung; Error-Banner Projektseite; Favoriten-Stern-Fix.
+### 2. Wichtigster Fund: Prod (CT 100) hatte unversionierte Änderungen
 
-**`344c5e3` — 11 Media-Pipeline-/Client-Bugs:**
-- Intro-Encode `-pix_fmt yuv420p -r 30` (yuv444p korrumpierte den `-c copy`-Concat). ⚠️ Alte Intros in `storage/` ggf. neu rendern.
-- Flash-Cut: exakt 1 weißer Frame, Clip um 1/30s gekürzt (kumulativer Beat-Drift weg); Segment-Länge per ffprobe statt API-Ganzzahl; `-t 0`-Guard.
-- Rejected Clips bleiben rejected (Download-Pfad); leere Sections crashen nicht; LLM-Farbvalidierung; Gemini→OpenRouter-Fallthrough; generic-http validiert; external-auth header-only + constant-time; retry-fetch cancelt Bodies.
+**CT 100 lief nicht nur auf altem Git-Stand — es hatte 23 Dateien lokal modifiziert, nie committed, nie gepusht.** Ursache: der alte Deploy-Workflow (siehe HANDOFF-Historie) hat den Code per `tar` direkt auf den Container gepusht (`git ls-files -z | tar ... | scp | pct push | docker compose build`), nie über `git commit`. Ergebnis: CT 100s Git-Working-Tree driftete von seinem eigenen HEAD weg, plus ~1800 macOS-AppleDouble-Mülldateien (`._*`) vom Tar-Build ohne `COPYFILE_DISABLE=1`.
 
-### 2. Status-Bar-Umbau (`3743cbe`, `eef00a7`)
+**Glück im Unglück**: Ein Diff-Vergleich zeigte, dass praktisch der gesamte Prod-Drift bereits **äquivalent oder besser** in den 7 unpushed lokalen Commits dieser Vor-Session steckte (`sendJobFailureAlert`, `trackSeed`-Clip-Varianz, `createStorageTempDir`, `extraKeywords`, `otherReadyCount`-Video-Sammelfreigabe, `python3-pil` im Dockerfile, `YOUTUBE_REDIRECT_BASE` in docker-compose — alles schon lokal vorhanden). Einzige echte Prod-only-Leiche: die tote `hyperframes`-Dependency (s.o.).
 
-- Vorher: Server-Komponente mit `noStore()` — ALLE Provider-Checks (sunoapi, OpenRouter, Higgsfield-CLI 10s, Whisper-Spawn) bei JEDER Navigation.
-- Jetzt: Client-Komponente, holt `/api/system/status` **einmal beim Seitenaufruf**; Refresh nur via `amf:refresh-status`-Event nach echten Aktionen (Musik generieren, KI-Analyse, Render, YouTube-Freigabe — Projektseite + Dashboard) + ein verzögerter Re-Fetch nach 20s (Worker verbraucht Credits asynchron). Kein Polling. Helper: `lib/status-refresh.ts`.
-- Credits aufgerundet ohne „cr" (Suno `870`, Higgsfield `1001`), passt in eine Zeile.
-- Browser-verifiziert: 1 Fetch beim Laden (Dev-StrictMode: 2), kein Refetch bei Navigation, Event triggert genau einen Fetch.
+**Vorgehen (sauber, nichts verloren)**:
+1. Auf CT 100: `._*`-Müll gelöscht, dann `git stash push -u -m "pre-sync snapshot..."` — Recovery-Punkt bleibt in `git stash list`, falls doch was übersehen wurde.
+2. Lokal: hyperframes-Cleanup committed, `git push`.
+3. Auf CT 100: `git pull` (Fast-Forward, keine Konflikte), `docker compose build web worker telegram-poller`, `docker compose up -d`.
 
-## Sofort nötig (vor dem nächsten Prod-Deploy!)
+### 3. TELEGRAM_WEBHOOK_SECRET auf CT 100 gesetzt
 
-1. **`TELEGRAM_WEBHOOK_SECRET` auf CT 100 setzen** (`openssl rand -hex 32`) — ohne die Variable lehnt der Webhook ALLE Updates ab (fail closed), der Poller beendet sich mit Fehlermeldung. Lokal schon in `.env.local`. Bei echtem Webhook danach einmal `/api/telegram/setup`.
-2. **Hermes auf `x-api-key`-Header umstellen** — `?api_key=` wird nicht mehr akzeptiert.
-3. **Push + Image-Rebuild CT 100** — erst nach 1+2.
-4. **Auto-Chain absegnen**: neue Projekte verbrauchen jetzt automatisch Suno-Credits (Design-Intention laut Code, aber bewusste Peter-Entscheidung ausstehend).
+War auf Prod nie gesetzt — der Poller würde beim nächsten Neustart sofort mit Fehlermeldung exit(1) (fail-closed by design, siehe `scripts/telegram-poller.ts`). Secret generiert (`openssl rand -hex 32`) und in `/opt/amf/.env` ergänzt, **vor** dem Rebuild. Poller lief nach Rebuild sauber durch (`[TgPoller] Bot commands registered`, `Polling for Telegram updates...`).
 
-## Nächste Schritte (Vorschläge, priorisiert)
+### 4. YouTube auf Prod neu verbunden
 
-1. **Deploy-Paket schnüren** (Punkte oben: Secret setzen → Hermes-Header → `git push` → CT-100-Rebuild → Smoke-Test Telegram-Bot + ein Track-Card-Versand). Eine Session, größter Nutzen: die 29 Fixes laufen sonst nur lokal.
-2. **Betroffene Videos neu rendern**: Ein Video mit Intro aus `storage/` prüfen (Playback nach dem Intro-Übergang) — falls korrupt, VideoJobs der hochgeladenen Videos re-rendern, bevor mehr davon auf YouTube landet.
-3. **Restliche ~18 Low-Findings fixen** (kleine Session, ~1h): stille Frontend-Fehler (Dashboard approve/create, Preset-Dialog, Rating-Form), `/tracks` volle Track-IDs, Poller-Backoff bei 409, suno-gcui Default-URL, system-status Env-Checks, YouTube-OAuth-Fallback-URL.
-4. **Regressionstests für die kritischen Fixes**: Retry-Idempotenz (handleMusicJob), Range-Handling der Audio-Route, `projectFileUrl`-Vertrag von sendTrackCard — die drei Bugs mit dem größten Schadenspotenzial haben noch keine Tests.
-5. **Kuration-Feature** (`curationStatus` auf Track, overnight-batch rendert nur `video-ready`): war schon in der Vorsession als größter Hebel identifiziert — verhindert 18 Versionen pro Song auf YouTube. Als Plan ausarbeiten.
-6. **Aufräumen aus Vorsession**: YouTube-Duplikate `track_a1` löschen (Task-Chip `task_e2b5494b`), SoundCloud-Album „Дорога домой" final bestätigen, `SHORTS-FACTORY-HANDOFF.md` an shorts_factory übergeben.
-7. **`CLAUDE.md` im Root entscheiden**: liegt untracked, wurde 2026-07-02 14:27 NICHT von dieser Session erstellt (Peter oder Parallel-Session?), Inhalt sieht korrekt aus → committen oder löschen.
+Google OAuth akzeptiert kein `http://192.168.1.31:3000` als Redirect-URI (nur `localhost` erlaubt ohne HTTPS). Ablauf:
+1. `.env` auf CT 100: `YOUTUBE_REDIRECT_BASE=http://localhost:3000` gesetzt, `docker compose up -d web`.
+2. SSH-Tunnel: `ssh -f -N -L 3000:192.168.1.31:3000 proxmox-prod`.
+3. Peter hat `http://localhost:3000/api/auth/youtube` im eigenen Browser geöffnet und den Google-Login/Consent abgeschlossen (das MUSS der Mensch machen, keine Automatisierung möglich).
+4. Nach Bestätigung: `YOUTUBE_REDIRECT_BASE` aus `.env` entfernt, `docker compose up -d web` erneut, Tunnel geschlossen.
+5. Verifiziert: `/api/settings/status` → `youtube: true` (per echtem Refresh-Check, nicht nur Datei-Existenz).
+
+**Merke für nächstes Mal**: SSH-Tunnel + `YOUTUBE_REDIRECT_BASE` ist der Standardweg für YouTube-Reconnect auf Prod, solange keine öffentliche HTTPS-Domain für CT 100 existiert.
 
 ## Aktueller Systemstand
 
-- **Branch `main`, 6 ungepushte Commits**: `00e64e9`, `5df64a0`, `344c5e3`, `2a6e240` (Handoff), `3743cbe`, `eef00a7`. Bewusst nicht gepusht — Breaking Changes (Webhook-Secret, Hermes-Header) brauchen erst die Deploy-Schritte oben.
-- Typecheck grün, alle 8 Tests grün. Status-Bar browser-verifiziert.
-- **Produktion (CT 100) läuft auf ALTEM Stand** (vor allen Fixes).
-- Higgsfield-Konto: ~1000 Credits, Plan „Plus" (Stand heute).
+- **Branch `main`, gepusht bis `13b500b`.** Prod (CT 100) ist auf demselben Stand — `git pull` lief sauber durch, kein Drift mehr.
+- Typecheck grün, alle 8 Tests grün (lokal geprüft nach hyperframes-Entfernung).
+- **CT 100 läuft jetzt auf aktuellem Code**: `docker compose ps` zeigt alle 4 Container (`db`, `web`, `worker`, `telegram-poller`) `Up` und gesund.
+- YouTube auf Prod verbunden (Refresh-Token gültig, echter Check bestätigt).
+- Higgsfield-Chip zeigt auf Prod `unavailable` — **erwartet**, CLI ist nicht im Docker-Image (wird auch pipeline-seitig nirgends gebraucht, nur der lokale Status-Check ruft sie auf). Lokal (Mac, Homebrew-CLI) zeigt sie korrekt Credits.
+- Ein Recovery-Stash liegt noch auf CT 100 (`git stash list` in `/opt/amf`) — kann nach ein paar Tagen ohne Probleme gedroppt werden, falls niemand ihn braucht.
+
+## Sofort nötig / offen
+
+1. **Deploy-Workflow umstellen**: der alte `tar`-basierte Push-Weg (siehe alte HANDOFF-Version, jetzt in `git log -p` auf CT 100 im Stash) darf nicht wiederkommen — er hat genau diesen Drift verursacht. Ab jetzt: lokal committen → `git push` → auf CT 100 `git pull` → `docker compose build && up -d`. Kein `tar`/`scp`/`pct push` von Code mehr, nur noch für Storage/Assets.
+2. **Hermes `?api_key=`-Frage weiter offen** — `lib/external-auth.ts` akzeptiert seit `344c5e3` nur noch `x-api-key`-Header, kein Query-Param mehr. Kein Hermes-Code lokal auffindbar, der die AMF-External-API aufruft — falls ein externer Caller noch den alten Query-Param nutzt, bricht er mit 401. Laut Peter kein aktuelles Problem (AMF hat eigenen Bot), aber im Hinterkopf behalten falls External-API-Calls plötzlich fehlschlagen.
+3. **Auto-Chain absegnen**: neue Projekte verbrauchen automatisch Suno-Credits (`maybeQueueMusicJob` nach Lyrics-/Prompt-Jobs) — Design-Intention laut Code, bewusste Peter-Entscheidung weiter offen.
+4. **Betroffene Videos neu rendern**: alte Intros in `storage/` ggf. mit korrupiertem `-c copy`-Concat (vor `344c5e3`) — noch nicht verifiziert, ob welche live auf YouTube sind.
+5. **Restliche ~18 Low-Findings** aus der Vor-Session (kleine Session, ~1h): stille Frontend-Fehler, `/tracks` volle Track-IDs, Poller-Backoff bei 409, suno-gcui Default-URL.
+6. **Kuration-Feature** (`curationStatus` auf Track): größter Hebel gegen zu viele Video-Versionen pro Song, noch nicht als Plan ausgearbeitet.
+7. Aufräumen aus Vor-Vorsession: YouTube-Duplikate `track_a1` (Task-Chip `task_e2b5494b`), SoundCloud-Album „Дорога домой", `SHORTS-FACTORY-HANDOFF.md` an shorts_factory übergeben.
 
 ## Gotchas (neu diese Session)
 
 | Was | Detail |
 |---|---|
-| ffmpeg concat `-c copy` | Alle Teile brauchen gleiches pix_fmt/fps/Auflösung. RGB-Filtergraph → libx264 wählt ohne `-pix_fmt` still yuv444p. Immer explizit `-pix_fmt yuv420p -r 30`. |
-| lavfi `color` mit `d=0.04` | erzeugt bei r=30 ZWEI Frames — für Einzelframes `-frames:v 1`. |
-| Telegram-API-Fehler | HTTP 400 mit `ok:false` — `fetch` wirft NICHT. Body prüfen (zentral in `tgCall`). |
-| Workflow-Subagenten (Claude) | Erben das Session-Modell (Fable 5!) — mechanische Stages mit `model`/`effort`-Override. Resume-Cache bricht bei parallelen Stages. 60 Agenten ≈ 3 Mio. Tokens. Memory: `workflow-model-override`. |
-| `TELEGRAM_WEBHOOK_SECRET` | Webhook + Poller brauchen dieselbe Variable, sonst Totalausfall Telegram (bewusst fail closed). |
-| Status-Bar-Refresh | Nach neuen credit-verbrauchenden UI-Aktionen `refreshSystemStatus()` aus `lib/status-refresh.ts` aufrufen — sonst bleibt die Anzeige stehen. |
+| Status-Checks ≠ Validität | Datei-Existenz (`fs.access`) beweist nicht, dass ein Token/eine Credential noch gültig ist. Für Auth-Status immer den echten Refresh/Call versuchen, nicht nur "existiert die Datei". |
+| Prod-Drift durch Tar-Deploys | Der alte `tar`-Push-Workflow committed nie auf CT 100 — Git-Status dort NIE blind vertrauen. **Vor jedem Rebuild**: `git status --short` auf CT 100 prüfen, bei Überraschungen erst `git stash` (nicht `checkout -- .` oder `reset --hard`), dann diffen. |
+| macOS AppleDouble-Müll (`._*`) | Entsteht bei `tar`/`scp` von macOS ohne `COPYFILE_DISABLE=1` oder `tar --disable-copyfile`. Sollten eigentlich in `.gitignore`, aktuell nicht. |
+| `TELEGRAM_WEBHOOK_SECRET` fehlt | Poller exits sofort beim Start (fail-closed) — vor jedem Prod-Rebuild prüfen, ob die Variable in `/opt/amf/.env` gesetzt ist, sonst Telegram-Totalausfall nach Deploy. |
+| YouTube-Reconnect auf Prod | Google akzeptiert kein Non-Localhost-HTTP als Redirect-URI. SSH-Tunnel (`ssh -L 3000:192.168.1.31:3000 proxmox-prod`) + `.env`: `YOUTUBE_REDIRECT_BASE=http://localhost:3000` + `docker compose up -d web`, nach Abschluss wieder entfernen. Login/Consent muss Peter im eigenen Browser machen. |
+| hyperframes/HyperFrames | Auf diesem LXC-Host (kein GPU) nie zum Laufen gebracht, deshalb schon länger auf Python PIL + ffmpeg umgestellt (`lib/intro-renderer.ts`). Dependency + Template-Dateien waren nur Leichen, jetzt entfernt. **Nicht wieder einführen.** |
 
 ## Gotchas (weiter gültig aus Vorsessions)
 
 | Was | Detail |
 |---|---|
-| SSH Proxmox / CT 100 | `ssh proxmox-prod` (192.168.1.15), dann `pct exec 100 -- bash -c '...'`. NAS: 192.168.1.10. |
-| tsx im Docker | Code ins Image gebacken → immer rebuild, nie nur restart. Disk 30 GB: `docker builder prune -f`. |
+| SSH Proxmox / CT 100 | `ssh proxmox-prod` (192.168.1.15), dann `pct exec 100 -- bash -c '...'`. NAS: 192.168.1.10. CT-100-IP direkt: `192.168.1.31` (kein direkter SSH-Key dafür — nur via `pct exec` über proxmox-prod). |
+| tsx im Docker | Code ins Image gebacken → immer rebuild, nie nur restart. Disk 50 GB, ~15 GB frei (Stand heute): `docker builder prune -f` bei Bedarf. |
 | Prisma | Local sqlite, Docker-Build patcht per `sed` auf postgresql. Vor DB-Arbeit: `npx prisma migrate status`. |
 | YouTube Token | `/mnt/nas/amf-storage/youtube-tokens.json` → Container `/data/storage/...`. Scopes upload + force-ssl. |
 | VideoJob `"ready"` | = wartet auf Freigabe, nicht „fertig". |
 | Intro-Render | Python PIL + ffmpeg, NICHT Hyperframes/Puppeteer. |
 | YouTube-Titel | `Songtitel (Version/Remix) - PtrX`, Autor PtrX. |
+| ffmpeg concat `-c copy` | Alle Teile brauchen gleiches pix_fmt/fps/Auflösung. Immer explizit `-pix_fmt yuv420p -r 30`. |
+| Telegram-API-Fehler | HTTP 400 mit `ok:false` — `fetch` wirft NICHT. Body prüfen (zentral in `tgCall`). |

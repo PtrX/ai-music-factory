@@ -19,11 +19,10 @@ dev.db-journal
 
 # storage
 storage/**
-!storage/hf-template/
-!storage/hf-template/**
 
 # misc
 .DS_Store
+._*
 *.pem
 *.tsbuildinfo
 next-env.d.ts
@@ -32,9 +31,6 @@ next-env.d.ts
 .claude/
 .opencode/
 .superpowers/
-
-# Session/handoff files
-HANDOFF.md
 
 # SQLite databases
 *.db
