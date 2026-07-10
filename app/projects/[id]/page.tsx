@@ -1673,7 +1673,7 @@ export default function ProjectDetail() {
             <DialogTitle>{releaseEditorId ? "Release bearbeiten" : "Release vorbereiten"}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            {releaseEditorTrack?.versionName || `Track ${releaseEditorTrack ? releaseEditorTrack.index + 1 : ""}`}. Ein Entwurf darf ohne Release-Datum gespeichert werden; ab „bereit für Upload“ ist ein Original-WAV Pflicht.
+            {releaseEditorTrack?.versionName || `Track ${releaseEditorTrack ? releaseEditorTrack.index + 1 : ""}`}. Ein Entwurf darf ohne Release-Datum gespeichert werden; für den Upload gilt: Original-WAV, wenn vorhanden, sonst die vorhandene Original-MP3 – nie MP3 nach WAV konvertieren.
           </p>
           <div className="grid grid-cols-2 gap-3 py-2">
             <div className="space-y-1"><Label>Artist *</Label><Input value={releaseForm.artistName} onChange={e => setReleaseForm(f => ({ ...f, artistName: e.target.value }))} /></div>
