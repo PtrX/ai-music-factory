@@ -111,6 +111,16 @@ human has checked its artist page, title, audio and artwork.
 5. On 2026-07-14 after 18:00 CEST, update individual platforms to `live` only
    after their verification; then capture UPC and evidence in the local package.
 
+## Mandatory master-archive to-do
+
+Suno retains media files for only 14 days. For every track that becomes a
+release candidate, download the original WAV within that window and save it on
+the Mac under `audio/master/` in the local release package. Confirm the file
+plays and record its format before doing cover, metadata or DistroKid work.
+Never recreate a "WAV master" by converting an archived MP3; if the original
+WAV was not saved in time, the candidate needs a new lossless source before it
+can enter the release gate.
+
 ## Cover system rule
 
 The `3AHAR` brand package and its explicit
