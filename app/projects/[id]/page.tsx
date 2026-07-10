@@ -100,6 +100,36 @@ interface VideoJob {
   createdAt: string
 }
 
+interface DistributionPlatform {
+  id: string
+  platform: string
+  status: string
+  url: string | null
+  checkedAt: string | null
+  notes: string | null
+}
+
+interface DistributionRelease {
+  id: string
+  artistName: string
+  releaseType: string
+  title: string
+  titleLanguage: string | null
+  label: string | null
+  status: string
+  targetReleaseDate: string | null
+  distributor: string
+  distroKidAlbumUuid: string | null
+  distroKidUrl: string | null
+  hyperfollowUrl: string | null
+  isrc: string | null
+  upc: string | null
+  submittedMasterPath: string | null
+  submittedCoverPath: string | null
+  releaseFolderPath: string | null
+  platforms: DistributionPlatform[]
+}
+
 interface Track {
   id: string
   index: number
@@ -129,6 +159,50 @@ interface Track {
   srtPath: string | null
   isFavorite: boolean
   videoJobs: VideoJob[]
+  distributionReleases: DistributionRelease[]
+}
+
+const RELEASE_STATUS_LABEL: Record<string, string> = {
+  draft: "Entwurf",
+  ready_for_submit: "bereit für Upload",
+  submitted: "bei DistroKid eingereicht",
+  delivered_scheduled: "ausgeliefert · geplant",
+  live: "live",
+  closed: "abgeschlossen",
+}
+
+function ReleaseDetails({ release }: { release: DistributionRelease }) {
+  const date = release.targetReleaseDate
+    ? new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(release.targetReleaseDate))
+    : null
+  return (
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 space-y-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold">Distribution</span>
+        <Badge variant="outline">{RELEASE_STATUS_LABEL[release.status] ?? release.status}</Badge>
+        {date && <span className="text-muted-foreground">Release: {date}</span>}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+        <span>{release.artistName} · {release.title}</span>
+        {release.isrc && <span>ISRC: {release.isrc}</span>}
+        {release.upc && <span>UPC: {release.upc}</span>}
+        {release.distroKidAlbumUuid && <span title="DistroKid Album UUID">DK: {release.distroKidAlbumUuid}</span>}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <a href={release.distroKidUrl || "https://distrokid.com/"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline hover:text-foreground">DistroKid <ExternalLink className="h-3 w-3" /></a>
+        {release.hyperfollowUrl && <a href={release.hyperfollowUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline hover:text-foreground">HyperFollow <ExternalLink className="h-3 w-3" /></a>}
+      </div>
+      {release.platforms.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {release.platforms.map(platform => (
+            <span key={platform.id} className="rounded-full border px-2 py-0.5" title={platform.notes || undefined}>
+              {platform.platform}: {platform.status === "scheduled_unverified" ? "geplant" : platform.status}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface VariantFiles {
@@ -1253,6 +1327,7 @@ export default function ProjectDetail() {
                                 <audio id={`audio-${track.id}`} controls preload="metadata" className="w-full">
                                   <source src={`/api/audio/${folderName}/${track.audioPath}`} type="audio/mpeg" />
                                 </audio>
+                                {track.distributionReleases.map(release => <ReleaseDetails key={release.id} release={release} />)}
                                 {track.structureJson && (() => {
                                   try {
                                     const structure = JSON.parse(track.structureJson)

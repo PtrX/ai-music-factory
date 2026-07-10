@@ -101,6 +101,51 @@ model Track {
   createdAt      DateTime @default(now())
   variant        Variant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
   videoJobs      VideoJob[]
+  distributionReleases DistributionRelease[]
+}
+
+model DistributionRelease {
+  id                 String   @id @default(cuid())
+  trackId            String
+  artistName         String
+  releaseType        String   @default("single")
+  title              String
+  titleLanguage      String?
+  label              String?
+  status             String   @default("draft")
+  targetReleaseDate  DateTime?
+  submittedAt        DateTime?
+  deliveredAt        DateTime?
+  liveAt             DateTime?
+  distributor        String   @default("DistroKid")
+  distroKidAlbumUuid String?  @unique
+  distroKidUrl       String?
+  hyperfollowUrl     String?
+  isrc               String?
+  upc                String?
+  submittedMasterPath String?
+  submittedCoverPath String?
+  releaseFolderPath  String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  track              Track    @relation(fields: [trackId], references: [id], onDelete: Restrict)
+  platforms          DistributionPlatform[]
+
+  @@index([trackId])
+  @@index([status, targetReleaseDate])
+}
+
+model DistributionPlatform {
+  id        String   @id @default(cuid())
+  releaseId String
+  platform  String
+  status    String   @default("planned")
+  url       String?
+  checkedAt DateTime?
+  notes     String?
+  release   DistributionRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@unique([releaseId, platform])
 }
 
 model Job {

@@ -22,6 +22,23 @@ interface VideoSummary {
   trackId?: string
 }
 
+interface DistributionPlatformSummary {
+  platform: string
+  status: string
+  url: string | null
+}
+
+interface DistributionReleaseSummary {
+  id: string
+  artistName: string
+  title: string
+  status: string
+  targetReleaseDate: string | null
+  distroKidUrl: string | null
+  hyperfollowUrl: string | null
+  platforms: DistributionPlatformSummary[]
+}
+
 interface TrackRow {
   id: string
   index: number
@@ -36,6 +53,7 @@ interface TrackRow {
   audioUrl: string | null
   coverUrl: string | null
   video: VideoSummary
+  release: DistributionReleaseSummary | null
 }
 
 interface VariantSummary {
@@ -99,6 +117,53 @@ function MetricChip({ value }: { value: string | number | null }) {
     >
       {value}
     </span>
+  )
+}
+
+const RELEASE_STATUS_LABEL: Record<string, string> = {
+  draft: "Release-Entwurf",
+  ready_for_submit: "bereit für Upload",
+  submitted: "bei DistroKid eingereicht",
+  delivered_scheduled: "ausgeliefert · geplant",
+  live: "live",
+  closed: "abgeschlossen",
+}
+
+function ReleaseSummary({ release, stop }: { release: DistributionReleaseSummary; stop: (e: MouseEvent) => void }) {
+  const live = release.platforms.filter(platform => platform.status === "live")
+  const scheduled = release.platforms.filter(platform => platform.status === "scheduled_unverified")
+  const date = release.targetReleaseDate
+    ? new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(release.targetReleaseDate))
+    : null
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 flex-shrink-0" onClick={stop}>
+      <span
+        className="rounded-full px-2 py-1 text-xs font-semibold whitespace-nowrap"
+        title={RELEASE_STATUS_LABEL[release.status] ?? release.status}
+        style={{ background: release.status === "live" ? "var(--accent-bg)" : "var(--surface-base)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
+      >
+        {release.status === "live" ? "● Live" : date ? `Release ${date}` : "Release"}
+      </span>
+      {live.map(platform => (
+        <a key={platform.platform} href={platform.url || "#"} target={platform.url ? "_blank" : undefined} rel="noreferrer" className="text-xs underline-offset-2 hover:underline" style={{ color: "var(--text-nav)" }} title={`${platform.platform}: live`}>
+          {platform.platform}
+        </a>
+      ))}
+      {scheduled.length > 0 && (
+        <span className="text-xs" title={`Noch nicht verifiziert: ${scheduled.map(p => p.platform).join(", ")}`} style={{ color: "var(--text-muted)" }}>
+          {scheduled.length} geplant
+        </span>
+      )}
+      <a href={release.distroKidUrl || "https://distrokid.com/"} target="_blank" rel="noreferrer" className="text-xs font-medium hover:underline" style={{ color: "var(--text-nav)" }}>
+        DistroKid ↗
+      </a>
+      {release.hyperfollowUrl && (
+        <a href={release.hyperfollowUrl} target="_blank" rel="noreferrer" className="text-xs font-medium hover:underline" style={{ color: "var(--text-nav)" }}>
+          Pre-save ↗
+        </a>
+      )}
+    </div>
   )
 }
 
@@ -496,6 +561,8 @@ export default function Dashboard() {
                                       {t.sectionCount != null && <MetricChip value={`${t.sectionCount}S`} />}
                                       {t.peakCount ? <MetricChip value={`${t.peakCount}P`} /> : null}
                                     </div>
+
+                                    {t.release && <ReleaseSummary release={t.release} stop={stop} />}
 
                                     {/* Video action */}
                                     <div className="flex-shrink-0 ml-auto">

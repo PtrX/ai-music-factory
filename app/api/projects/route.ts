@@ -166,6 +166,20 @@ export async function GET() {
                 sunoImageUrl: true,
                 sunoSourceImageUrl: true,
                 createdAt: true,
+                distributionReleases: {
+                  orderBy: [{ targetReleaseDate: "desc" }, { createdAt: "desc" }],
+                  take: 1,
+                  select: {
+                    id: true,
+                    artistName: true,
+                    title: true,
+                    status: true,
+                    targetReleaseDate: true,
+                    distroKidUrl: true,
+                    hyperfollowUrl: true,
+                    platforms: { select: { platform: true, status: true, url: true } },
+                  },
+                },
                 videoJobs: {
                   orderBy: { createdAt: "desc" },
                   take: 10,
@@ -248,6 +262,7 @@ export async function GET() {
               audioUrl: projectFileUrl(p.folderPath, t.audioPath),
               coverUrl,
               video: videoState,
+              release: t.distributionReleases[0] ?? null,
               ...structure,
             }
           })
