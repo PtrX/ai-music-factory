@@ -110,14 +110,14 @@ function MetricChip({ value }: { value: string | number | null }) {
   )
 }
 
-function DistributionSummary({ release, hasWav, stop }: { release: DistributionReleaseSummary | null; hasWav: boolean; stop: (e: MouseEvent) => void }) {
+function DistributionSummary({ release, hasWav }: { release: DistributionReleaseSummary | null; hasWav: boolean }) {
   const isDistributed = release && ["submitted", "delivered_scheduled", "live", "closed"].includes(release.status)
   if (!hasWav && !isDistributed) return null
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 flex-shrink-0" onClick={stop}>
+    <div className="flex flex-wrap items-center gap-1.5 flex-shrink-0" onClick={(event) => event.stopPropagation()}>
       {hasWav && <span className="rounded-full px-2 py-1 text-xs font-semibold whitespace-nowrap" style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}>WAV</span>}
-      {isDistributed && <a href={release.distroKidUrl || "https://distrokid.com/"} target="_blank" rel="noreferrer" className="rounded-full px-2 py-1 text-xs font-semibold whitespace-nowrap hover:underline" style={{ background: "var(--surface-base)", border: "1px solid var(--border-hex)", color: "var(--text-nav)" }}>DistroKid ↗</a>}
+      {isDistributed && <a href={release.distroKidUrl || "https://distrokid.com/"} target="_blank" rel="noreferrer" className="rounded-full px-2 py-1 text-xs font-semibold whitespace-nowrap hover:underline" style={{ background: "var(--surface-base)", border: "1px solid var(--border-hex)", color: "var(--text-nav)" }}>DistroKid</a>}
     </div>
   )
 }
@@ -517,7 +517,7 @@ export default function Dashboard() {
                                       {t.peakCount ? <MetricChip value={`${t.peakCount}P`} /> : null}
                                     </div>
 
-                                    <DistributionSummary release={t.release} hasWav={t.hasWav} stop={stop} />
+                                    <DistributionSummary release={t.release} hasWav={t.hasWav} />
 
                                     {/* Video action */}
                                     <div className="flex-shrink-0 ml-auto">
