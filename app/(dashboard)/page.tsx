@@ -22,21 +22,10 @@ interface VideoSummary {
   trackId?: string
 }
 
-interface DistributionPlatformSummary {
-  platform: string
-  status: string
-  url: string | null
-}
-
 interface DistributionReleaseSummary {
   id: string
-  artistName: string
-  title: string
   status: string
-  targetReleaseDate: string | null
   distroKidUrl: string | null
-  hyperfollowUrl: string | null
-  platforms: DistributionPlatformSummary[]
 }
 
 interface TrackRow {
@@ -121,62 +110,14 @@ function MetricChip({ value }: { value: string | number | null }) {
   )
 }
 
-const RELEASE_STATUS_LABEL: Record<string, string> = {
-  draft: "Release-Entwurf",
-  ready_for_submit: "bereit für Upload",
-  submitted: "bei DistroKid eingereicht",
-  delivered_scheduled: "ausgeliefert · geplant",
-  live: "live",
-  closed: "abgeschlossen",
-}
-
 function DistributionSummary({ release, hasWav, stop }: { release: DistributionReleaseSummary | null; hasWav: boolean; stop: (e: MouseEvent) => void }) {
-  if (!release) {
-    return (
-      <div className="flex flex-wrap items-center gap-1.5 flex-shrink-0" onClick={stop}>
-        <span className="rounded-full px-2 py-1 text-xs whitespace-nowrap" style={{ background: "var(--surface-base)", border: "1px solid var(--border-hex)", color: "var(--text-muted)" }}>kein Release</span>
-        <span className="rounded-full px-2 py-1 text-xs whitespace-nowrap" style={{ background: hasWav ? "var(--accent-bg)" : "var(--surface-base)", border: "1px solid var(--border-hex)", color: hasWav ? "var(--accent-green)" : "var(--text-muted)" }}>{hasWav ? "WAV vorhanden" : "WAV fehlt"}</span>
-      </div>
-    )
-  }
-  const live = release.platforms.filter(platform => platform.status === "live")
-  const scheduled = release.platforms.filter(platform => platform.status === "scheduled_unverified")
-  const date = release.targetReleaseDate
-    ? new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(release.targetReleaseDate))
-    : null
+  const isDistributed = release && ["submitted", "delivered_scheduled", "live", "closed"].includes(release.status)
+  if (!hasWav && !isDistributed) return null
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 flex-shrink-0" onClick={stop}>
-      <span
-        className="rounded-full px-2 py-1 text-xs font-semibold whitespace-nowrap"
-        title={RELEASE_STATUS_LABEL[release.status] ?? release.status}
-        style={{ background: release.status === "live" ? "var(--accent-bg)" : "var(--surface-base)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
-      >
-        {release.status === "live" ? "Distro · live" : date ? `Distro · ${date}` : `Distro · ${RELEASE_STATUS_LABEL[release.status] ?? release.status}`}
-      </span>
-      <span className="rounded-full px-2 py-1 text-xs whitespace-nowrap" style={{ background: hasWav ? "var(--accent-bg)" : "var(--surface-base)", border: "1px solid var(--border-hex)", color: hasWav ? "var(--accent-green)" : "var(--text-muted)" }}>{hasWav ? "WAV vorhanden" : "WAV fehlt"}</span>
-      {live.map(platform => platform.url ? (
-        <a key={platform.platform} href={platform.url} target="_blank" rel="noreferrer" className="text-xs underline-offset-2 hover:underline" style={{ color: "var(--text-nav)" }} title={`${platform.platform}: live`}>
-          {platform.platform}
-        </a>
-      ) : (
-        <span key={platform.platform} className="text-xs" style={{ color: "var(--text-nav)" }} title={`${platform.platform}: ausgeliefert`}>
-          {platform.platform}
-        </span>
-      ))}
-      {scheduled.length > 0 && (
-        <span className="text-xs" title={`Noch nicht verifiziert: ${scheduled.map(p => p.platform).join(", ")}`} style={{ color: "var(--text-muted)" }}>
-          {scheduled.length} geplant
-        </span>
-      )}
-      <a href={release.distroKidUrl || "https://distrokid.com/"} target="_blank" rel="noreferrer" className="text-xs font-medium hover:underline" style={{ color: "var(--text-nav)" }}>
-        DistroKid ↗
-      </a>
-      {release.hyperfollowUrl && (
-        <a href={release.hyperfollowUrl} target="_blank" rel="noreferrer" className="text-xs font-medium hover:underline" style={{ color: "var(--text-nav)" }}>
-          Pre-save ↗
-        </a>
-      )}
+      {hasWav && <span className="rounded-full px-2 py-1 text-xs font-semibold whitespace-nowrap" style={{ background: "var(--accent-bg)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}>WAV</span>}
+      {isDistributed && <a href={release.distroKidUrl || "https://distrokid.com/"} target="_blank" rel="noreferrer" className="rounded-full px-2 py-1 text-xs font-semibold whitespace-nowrap hover:underline" style={{ background: "var(--surface-base)", border: "1px solid var(--border-hex)", color: "var(--text-nav)" }}>DistroKid ↗</a>}
     </div>
   )
 }
