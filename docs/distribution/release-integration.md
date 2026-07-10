@@ -113,9 +113,13 @@ human has checked its artist page, title, audio and artwork.
 
 ## Cover system rule
 
-The `3AHAR` brand package is the reference system: one artwork-only scene
-generated from a release-specific brief, followed by real typographic overlay
-for `3AHAR` and the exact title. The approved final goes to
+The `3AHAR` brand package and its explicit
+[`BRAND_TARGET.md`](/Users/peter/claude_code/DistroKid/artists/3AHAR/brand/BRAND_TARGET.md)
+are the reference system: one artwork-only cinematic, nomadic scene generated
+from a release-specific brief, followed by real typographic overlay for `3AHAR`
+and the exact title. The approved final goes to
 `artwork/submitted/`; model output and alternatives stay in
 `artwork/candidates/`. This preserves a coherent palette and wordmark without
-repeating the same desert image or trusting generated text.
+repeating the same desert image or trusting generated text. `3AHAR Records`
+remains a visual concept unless a separate, explicit distribution-label decision
+changes the current `AI Music Factory` label.
