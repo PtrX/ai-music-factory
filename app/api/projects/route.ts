@@ -2,6 +2,8 @@ export const dynamic = "force-dynamic"
 
 import { NextRequest, NextResponse } from "next/server"
 import { Prisma, type Project } from "@prisma/client"
+import * as fs from "fs/promises"
+import * as path from "path"
 import { prisma } from "@/lib/db"
 import { slugify, ensureProjectFolder, saveProjectJson, projectFileUrl } from "@/lib/storage"
 import { enqueue } from "@/lib/queue"
@@ -14,6 +16,13 @@ const VARIANT_NAMES: Record<string, string> = {
   C: "Organic & Poetic",
   D: "Dark & Hypnotic",
   E: "Radio / TikTok",
+}
+const STORAGE_BASE = process.env.STORAGE_BASE_PATH ?? path.join(process.cwd(), "storage")
+
+async function hasArchivedProjectWav(projectFolder: string) {
+  const archiveFolder = path.join(STORAGE_BASE, "wav", path.basename(projectFolder))
+  const files = await fs.readdir(archiveFolder, { withFileTypes: true }).catch(() => [])
+  return files.some(file => file.isFile() && /\.wav$/i.test(file.name))
 }
 
 export async function POST(req: NextRequest) {
@@ -195,6 +204,10 @@ export async function GET() {
 
     // Per-VARIANT (= version A/B/C/D) most-advanced video state for the overview.
     const ACTIVE = ["queued", "rendering", "uploading", "approved"]
+    const archivedWavByProject = new Map(await Promise.all(projects.map(async (project) => [
+      project.id,
+      await hasArchivedProjectWav(project.folderPath),
+    ] as const)))
     type Trk = (typeof projects)[number]["variants"][number]["tracks"][number]
     const videoOf = (tracks: Trk[], preferredTrackId?: string | null) => {
       const vjOf = (t: Trk) =>
@@ -264,7 +277,7 @@ export async function GET() {
               coverUrl,
               video: videoState,
               release: t.distributionReleases[0] ?? null,
-              hasWav: /\.wav$/i.test(t.audioPath) || t.distributionReleases.some((release) => /\.wav$/i.test(release.submittedMasterPath ?? "")),
+              hasWav: /\.wav$/i.test(t.audioPath) || archivedWavByProject.get(p.id) === true || t.distributionReleases.some((release) => /\.wav$/i.test(release.submittedMasterPath ?? "")),
               ...structure,
             }
           })
