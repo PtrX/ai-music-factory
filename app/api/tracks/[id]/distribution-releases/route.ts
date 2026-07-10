@@ -31,10 +31,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const artistName = optionalString(body.artistName)
     const title = optionalString(body.title)
     const targetReleaseDate = optionalDate(body.targetReleaseDate)
-    if (!artistName || !title || targetReleaseDate === undefined) {
-      return NextResponse.json({ error: "artistName, title und ein gültiges Release-Datum sind erforderlich." }, { status: 400 })
+    const status = body.status ?? "draft"
+    if (!artistName || !title || targetReleaseDate === undefined || (status !== "draft" && !targetReleaseDate)) {
+      return NextResponse.json({ error: "artistName und title sind erforderlich; ein Release-Datum wird ab „bereit für Upload“ benötigt." }, { status: 400 })
     }
-    if (body.status && !RELEASE_STATUSES.has(body.status)) {
+    if (!RELEASE_STATUSES.has(status)) {
       return NextResponse.json({ error: "Ungültiger Release-Status." }, { status: 400 })
     }
     const track = await prisma.track.findUnique({ where: { id: params.id }, select: { id: true } })
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         releaseType: optionalString(body.releaseType) ?? "single",
         titleLanguage: optionalString(body.titleLanguage),
         label: optionalString(body.label),
-        status: body.status ?? "draft",
+        status,
         distributor: optionalString(body.distributor) ?? "DistroKid",
         distroKidAlbumUuid: optionalString(body.distroKidAlbumUuid),
         distroKidUrl: optionalString(body.distroKidUrl),

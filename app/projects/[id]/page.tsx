@@ -265,6 +265,57 @@ export default function ProjectDetail() {
   const [newVariantDirection, setNewVariantDirection] = useState<string | null>(null)
   const [newVariantCustom, setNewVariantCustom] = useState("")
   const [creatingVariant, setCreatingVariant] = useState(false)
+  const [releaseEditorTrack, setReleaseEditorTrack] = useState<Track | null>(null)
+  const [releaseEditorId, setReleaseEditorId] = useState<string | null>(null)
+  const [releaseSaving, setReleaseSaving] = useState(false)
+  const [releaseError, setReleaseError] = useState<string | null>(null)
+  const [releaseForm, setReleaseForm] = useState({ artistName: "3AHAR", title: "", titleLanguage: "", label: "AI Music Factory", status: "draft", targetReleaseDate: "", distributor: "DistroKid", distroKidAlbumUuid: "", hyperfollowUrl: "", isrc: "", upc: "", releaseFolderPath: "" })
+
+  const openReleaseEditor = (track: Track) => {
+    const release = track.distributionReleases[0]
+    setReleaseEditorTrack(track)
+    setReleaseEditorId(release?.id ?? null)
+    setReleaseError(null)
+    setReleaseForm({
+      artistName: release?.artistName ?? "3AHAR",
+      title: release?.title ?? project?.title ?? "",
+      titleLanguage: release?.titleLanguage ?? project?.language ?? "",
+      label: release?.label ?? "AI Music Factory",
+      status: release?.status ?? "draft",
+      targetReleaseDate: release?.targetReleaseDate?.slice(0, 10) ?? "",
+      distributor: release?.distributor ?? "DistroKid",
+      distroKidAlbumUuid: release?.distroKidAlbumUuid ?? "",
+      hyperfollowUrl: release?.hyperfollowUrl ?? "",
+      isrc: release?.isrc ?? "",
+      upc: release?.upc ?? "",
+      releaseFolderPath: release?.releaseFolderPath ?? "",
+    })
+  }
+
+  const saveRelease = async () => {
+    if (!releaseEditorTrack) return
+    setReleaseSaving(true)
+    setReleaseError(null)
+    try {
+      const endpoint = releaseEditorId
+        ? `/api/distribution-releases/${releaseEditorId}`
+        : `/api/tracks/${releaseEditorTrack.id}/distribution-releases`
+      const res = await fetch(endpoint, {
+        method: releaseEditorId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(releaseForm),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || "Release konnte nicht gespeichert werden.")
+      await loadAllTracks(project?.variants ?? [])
+      setReleaseEditorTrack(null)
+      setReleaseEditorId(null)
+    } catch (err) {
+      setReleaseError(err instanceof Error ? err.message : "Release konnte nicht gespeichert werden.")
+    } finally {
+      setReleaseSaving(false)
+    }
+  }
 
   const createVariant = async () => {
     if (!project) return
@@ -1252,6 +1303,14 @@ export default function ProjectDetail() {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-1.5">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 text-xs px-2"
+                                      onClick={() => openReleaseEditor(track)}
+                                    >
+                                      {track.distributionReleases.length > 0 ? "Release" : "Release vorbereiten"}
+                                    </Button>
                                     {track.aiScoreTotal !== null && (
                                       <Badge
                                         variant="outline"
@@ -1604,6 +1663,36 @@ export default function ProjectDetail() {
             <Button onClick={handleSaveEdit} disabled={editSaving}>
               {editSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Speichern…</> : <><Check className="h-4 w-4 mr-1" />Speichern</>}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={releaseEditorTrack !== null} onOpenChange={(open) => { if (!open) setReleaseEditorTrack(null) }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{releaseEditorId ? "Release bearbeiten" : "Release vorbereiten"}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {releaseEditorTrack?.versionName || `Track ${releaseEditorTrack ? releaseEditorTrack.index + 1 : ""}`}. Ein Entwurf darf ohne Release-Datum gespeichert werden; ab „bereit für Upload“ ist ein Original-WAV Pflicht.
+          </p>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="space-y-1"><Label>Artist *</Label><Input value={releaseForm.artistName} onChange={e => setReleaseForm(f => ({ ...f, artistName: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>Titel *</Label><Input value={releaseForm.title} onChange={e => setReleaseForm(f => ({ ...f, title: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>Sprache</Label><Input value={releaseForm.titleLanguage} onChange={e => setReleaseForm(f => ({ ...f, titleLanguage: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>Label</Label><Input value={releaseForm.label} onChange={e => setReleaseForm(f => ({ ...f, label: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>Status</Label><select value={releaseForm.status} onChange={e => setReleaseForm(f => ({ ...f, status: e.target.value }))} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="draft">Entwurf</option><option value="ready_for_submit">bereit für Upload</option><option value="submitted">eingereicht</option><option value="delivered_scheduled">ausgeliefert · geplant</option><option value="live">live</option><option value="closed">abgeschlossen</option></select></div>
+            <div className="space-y-1"><Label>Release-Datum</Label><Input type="date" value={releaseForm.targetReleaseDate} onChange={e => setReleaseForm(f => ({ ...f, targetReleaseDate: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>Distributor</Label><Input value={releaseForm.distributor} onChange={e => setReleaseForm(f => ({ ...f, distributor: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>ISRC</Label><Input value={releaseForm.isrc} onChange={e => setReleaseForm(f => ({ ...f, isrc: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>UPC</Label><Input value={releaseForm.upc} onChange={e => setReleaseForm(f => ({ ...f, upc: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>DistroKid UUID</Label><Input value={releaseForm.distroKidAlbumUuid} onChange={e => setReleaseForm(f => ({ ...f, distroKidAlbumUuid: e.target.value }))} /></div>
+            <div className="col-span-2 space-y-1"><Label>HyperFollow-URL</Label><Input value={releaseForm.hyperfollowUrl} onChange={e => setReleaseForm(f => ({ ...f, hyperfollowUrl: e.target.value }))} /></div>
+            <div className="col-span-2 space-y-1"><Label>Lokaler Release-Ordner</Label><Input value={releaseForm.releaseFolderPath} onChange={e => setReleaseForm(f => ({ ...f, releaseFolderPath: e.target.value }))} placeholder="/Users/peter/claude_code/DistroKid/artists/..." /></div>
+          </div>
+          {releaseError && <div role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{releaseError}</div>}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setReleaseEditorTrack(null)} disabled={releaseSaving}>Abbrechen</Button>
+            <Button onClick={saveRelease} disabled={releaseSaving}>{releaseSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Speichern…</> : "Release speichern"}</Button>
           </div>
         </DialogContent>
       </Dialog>

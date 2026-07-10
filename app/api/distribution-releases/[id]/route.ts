@@ -22,7 +22,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const body = await req.json()
     const dateKeys = ["targetReleaseDate", "submittedAt", "deliveredAt", "liveAt"] as const
     const dates = Object.fromEntries(dateKeys.map(key => [key, optionalDate(body[key])])) as Record<typeof dateKeys[number], Date | null | undefined>
-    if (dateKeys.some(key => dates[key] === undefined) || (body.status && !RELEASE_STATUSES.has(body.status))) {
+    const existing = await prisma.distributionRelease.findUnique({ where: { id: params.id }, select: { status: true, targetReleaseDate: true } })
+    const status = body.status ?? existing?.status
+    const targetReleaseDate = body.targetReleaseDate !== undefined ? dates.targetReleaseDate : existing?.targetReleaseDate
+    if (!existing || dateKeys.some(key => dates[key] === undefined) || !status || !RELEASE_STATUSES.has(status) || (status !== "draft" && !targetReleaseDate)) {
       return NextResponse.json({ error: "Ungültige Release-Daten." }, { status: 400 })
     }
     const release = await prisma.$transaction(async (tx) => {
@@ -39,8 +42,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return tx.distributionRelease.update({
         where: { id: params.id },
         data: {
-          ...(body.artistName !== undefined && { artistName: optionalString(body.artistName) ?? "" }),
-          ...(body.title !== undefined && { title: optionalString(body.title) ?? "" }),
+          ...(body.artistName !== undefined && optionalString(body.artistName) && { artistName: optionalString(body.artistName)! }),
+          ...(body.title !== undefined && optionalString(body.title) && { title: optionalString(body.title)! }),
           ...(body.releaseType !== undefined && { releaseType: optionalString(body.releaseType) ?? "single" }),
           ...(body.titleLanguage !== undefined && { titleLanguage: optionalString(body.titleLanguage) }),
           ...(body.label !== undefined && { label: optionalString(body.label) }),
