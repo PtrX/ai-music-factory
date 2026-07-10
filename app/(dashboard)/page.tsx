@@ -145,10 +145,14 @@ function ReleaseSummary({ release, stop }: { release: DistributionReleaseSummary
       >
         {release.status === "live" ? "● Live" : date ? `Release ${date}` : "Release"}
       </span>
-      {live.map(platform => (
-        <a key={platform.platform} href={platform.url || "#"} target={platform.url ? "_blank" : undefined} rel="noreferrer" className="text-xs underline-offset-2 hover:underline" style={{ color: "var(--text-nav)" }} title={`${platform.platform}: live`}>
+      {live.map(platform => platform.url ? (
+        <a key={platform.platform} href={platform.url} target="_blank" rel="noreferrer" className="text-xs underline-offset-2 hover:underline" style={{ color: "var(--text-nav)" }} title={`${platform.platform}: live`}>
           {platform.platform}
         </a>
+      ) : (
+        <span key={platform.platform} className="text-xs" style={{ color: "var(--text-nav)" }} title={`${platform.platform}: ausgeliefert`}>
+          {platform.platform}
+        </span>
       ))}
       {scheduled.length > 0 && (
         <span className="text-xs" title={`Noch nicht verifiziert: ${scheduled.map(p => p.platform).join(", ")}`} style={{ color: "var(--text-muted)" }}>
