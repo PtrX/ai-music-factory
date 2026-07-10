@@ -54,6 +54,7 @@ interface TrackRow {
   coverUrl: string | null
   video: VideoSummary
   release: DistributionReleaseSummary | null
+  hasWav: boolean
 }
 
 interface VariantSummary {
@@ -129,7 +130,15 @@ const RELEASE_STATUS_LABEL: Record<string, string> = {
   closed: "abgeschlossen",
 }
 
-function ReleaseSummary({ release, stop }: { release: DistributionReleaseSummary; stop: (e: MouseEvent) => void }) {
+function DistributionSummary({ release, hasWav, stop }: { release: DistributionReleaseSummary | null; hasWav: boolean; stop: (e: MouseEvent) => void }) {
+  if (!release) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 flex-shrink-0" onClick={stop}>
+        <span className="rounded-full px-2 py-1 text-xs whitespace-nowrap" style={{ background: "var(--surface-base)", border: "1px solid var(--border-hex)", color: "var(--text-muted)" }}>kein Release</span>
+        <span className="rounded-full px-2 py-1 text-xs whitespace-nowrap" style={{ background: hasWav ? "var(--accent-bg)" : "var(--surface-base)", border: "1px solid var(--border-hex)", color: hasWav ? "var(--accent-green)" : "var(--text-muted)" }}>{hasWav ? "WAV vorhanden" : "WAV fehlt"}</span>
+      </div>
+    )
+  }
   const live = release.platforms.filter(platform => platform.status === "live")
   const scheduled = release.platforms.filter(platform => platform.status === "scheduled_unverified")
   const date = release.targetReleaseDate
@@ -143,8 +152,9 @@ function ReleaseSummary({ release, stop }: { release: DistributionReleaseSummary
         title={RELEASE_STATUS_LABEL[release.status] ?? release.status}
         style={{ background: release.status === "live" ? "var(--accent-bg)" : "var(--surface-base)", border: "1px solid var(--accent-border)", color: "var(--accent-green)" }}
       >
-        {release.status === "live" ? "● Live" : date ? `Release ${date}` : "Release"}
+        {release.status === "live" ? "Distro · live" : date ? `Distro · ${date}` : `Distro · ${RELEASE_STATUS_LABEL[release.status] ?? release.status}`}
       </span>
+      <span className="rounded-full px-2 py-1 text-xs whitespace-nowrap" style={{ background: hasWav ? "var(--accent-bg)" : "var(--surface-base)", border: "1px solid var(--border-hex)", color: hasWav ? "var(--accent-green)" : "var(--text-muted)" }}>{hasWav ? "WAV vorhanden" : "WAV fehlt"}</span>
       {live.map(platform => platform.url ? (
         <a key={platform.platform} href={platform.url} target="_blank" rel="noreferrer" className="text-xs underline-offset-2 hover:underline" style={{ color: "var(--text-nav)" }} title={`${platform.platform}: live`}>
           {platform.platform}
@@ -566,7 +576,7 @@ export default function Dashboard() {
                                       {t.peakCount ? <MetricChip value={`${t.peakCount}P`} /> : null}
                                     </div>
 
-                                    {t.release && <ReleaseSummary release={t.release} stop={stop} />}
+                                    <DistributionSummary release={t.release} hasWav={t.hasWav} stop={stop} />
 
                                     {/* Video action */}
                                     <div className="flex-shrink-0 ml-auto">

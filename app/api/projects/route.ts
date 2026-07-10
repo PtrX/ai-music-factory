@@ -177,6 +177,7 @@ export async function GET() {
                     targetReleaseDate: true,
                     distroKidUrl: true,
                     hyperfollowUrl: true,
+                    submittedMasterPath: true,
                     platforms: { select: { platform: true, status: true, url: true } },
                   },
                 },
@@ -263,6 +264,7 @@ export async function GET() {
               coverUrl,
               video: videoState,
               release: t.distributionReleases[0] ?? null,
+              hasWav: /\.wav$/i.test(t.audioPath) || t.distributionReleases.some((release) => /\.wav$/i.test(release.submittedMasterPath ?? "")),
               ...structure,
             }
           })
