@@ -130,6 +130,7 @@ from a release-specific brief, followed by real typographic overlay for `3AHAR`
 and the exact title. The approved final goes to
 `artwork/submitted/`; model output and alternatives stay in
 `artwork/candidates/`. This preserves a coherent palette and wordmark without
-repeating the same desert image or trusting generated text. `3AHAR Records`
+repeating the same desert image. Final image text is allowed when it passes a
+strict spelling, logo-shape and thumbnail-readability QA. `3AHAR Records`
 remains a visual concept unless a separate, explicit distribution-label decision
 changes the current `AI Music Factory` label.
