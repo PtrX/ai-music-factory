@@ -37,6 +37,20 @@ _Stand: 2026-07-03 abend_
   in AMF markiert. Neue Produktionsreihenfolge davor: (1) `Заметался пожар
   голубой…`, (2) `Отговорила роща золотая…`, (3) `Пускай ты выпита другим…`.
   Produktion bedeutet noch keine Release-Freigabe.
+- Automatischer Release-Paket-Standard: Bei jedem von Peter benannten nächsten
+  Release ohne erneute Grundsatzfrage Audio-Master, 3000×3000-Cover,
+  DistroKid-fertige Lyrics/Metadaten/Credits, eine fotorealistische 9:16-Loop,
+  Spotify-Canvas mit 7,5 Sekunden, Reel-Endcard, YouTube-Video/1920×1080-
+  Thumbnail und Evidenz/Store-Links vorbereiten. Canvas enthält keine CTA,
+  URLs oder Service-Logos; diese gehören nur in die separate Reel-Endcard.
+  Maßgeblich:
+  `/Users/peter/claude_code/DistroKid/docs/RELEASE_CHECKLIST_AND_LESSONS_LEARNED.md`.
+- Zwingendes Gedicht-Rechte-Stop-Gate: **vor** Musik-/Design-/Release-Aufwand
+  Autor und Todesjahr, exakte Textfassung und Quelle, Übersetzung/Bearbeitung,
+  Zielterritorien sowie aktuelle Distributor-/Store-Regeln prüfen und als
+  `GREEN`, `YELLOW` oder `RED` dokumentieren. Bei `YELLOW` oder `RED` Peter
+  ausdrücklich warnen und keine Cover-, Canvas-, Video- oder
+  Distributionsproduktion beginnen. Nur `GREEN` öffnet das Release-Paket.
 
 > Zuerst lesen: `BEATS2YOUTUBE_CHECKLIST.md`. Repo ist öffentlich (github.com/PtrX/ai-music-factory).
 
