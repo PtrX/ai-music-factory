@@ -1,7 +1,33 @@
 # HANDOFF — AI Music Factory
 _Stand: 2026-07-03 abend_
 
+## Wichtige Ergänzung — 2026-07-14 / 3AHAR Distribution
+
+- Lokaler Distribution-Workspace und maßgebliche Release-Dokumentation:
+  `/Users/peter/claude_code/DistroKid`.
+- Aktueller Release: `3AHAR — Река за горами`, DistroKid-Release am
+  2026-07-16, Album-UUID `DE724570-87EA-40D3-B77EC4599B594835`.
+- Verbindliche Motion-Kostenregel: **Gemini Omni ist Standard** für 3AHAR
+  Canvas-/Reel-Loops. **Seedance und andere teurere Modelle niemals ohne
+  Peters ausdrückliche Freigabe für den einzelnen Render verwenden.** Wenn
+  Gemini scheitert, stoppen und fragen; nicht selbstständig eskalieren.
+- Spotify Canvas muss länger als 3 und kürzer als 8 Sekunden sein. Lokaler
+  Standardexport: 7,5 Sekunden, 9:16, H.264, mindestens 720 px hoch, ohne Audio.
+- Vollständiger aktueller Release-Handoff:
+  `/Users/peter/claude_code/DistroKid/artists/3AHAR/releases/2026-07-16_reka-za-gorami/release-handoff.md`.
+- Second-Brain-Handoff:
+  `/Users/peter/second-brain/projects/3AHAR Distribution und Promotion.md`.
+
 > Zuerst lesen: `BEATS2YOUTUBE_CHECKLIST.md`. Repo ist öffentlich (github.com/PtrX/ai-music-factory).
+
+## Release archive — 3AHAR
+
+The first public 3AHAR release is archived locally at
+`storage/release-archive/3AHAR/2026-07-14_svet-moey-dushi/` (intentionally git-ignored because it contains audio/video assets).
+
+- Tracked handoff and identifiers: `docs/releases/2026-07-14_3AHAR_svet-moey-dushi.md`
+- Release title: `Свет моей души`; ISRC: `QT6F22663433`; DistroKid UUID: `66C7A0EA-B2A8-48BF-A25D6A7A41A5914B`
+- Public launch: 2026-07-14; read the release handoff before any asset, metadata, upload, or artist-mapping work.
 
 ## Was diese Session gemacht wurde
 
