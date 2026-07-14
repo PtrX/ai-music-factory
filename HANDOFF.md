@@ -17,6 +17,19 @@ _Stand: 2026-07-03 abend_
   `/Users/peter/claude_code/DistroKid/artists/3AHAR/releases/2026-07-16_reka-za-gorami/release-handoff.md`.
 - Second-Brain-Handoff:
   `/Users/peter/second-brain/projects/3AHAR Distribution und Promotion.md`.
+- Neue AMF-Ideenliste aus Peters Screenshots plus Ergänzungen: zwölf Gedichte
+  von Sergei Yesenin sowie Alexander Bloks `Незнакомка` und Rasul Gamzatovs
+  `Журавли`. Peter hört/liest zuerst alle vierzehn und wählt danach maximal drei Kandidaten
+  für neue AMF-Projekte. Kein Massenstart aller Texte. Detailtabelle,
+  Rechte-Gates und Arbeitsfolge:
+  `/Users/peter/second-brain/projects/3AHAR Gedichte als Track-Kandidaten.md`.
+- Strategische Projektgrundlage `Classical Poetry × Melodic Afro House`:
+  `/Users/peter/second-brain/projects/Classical Poetry x Melodic Afro House.md`.
+  Phase 1 arbeitet mit russischen Yesenin-Originaltexten, modernen eigenen
+  Kompositionen und maximal drei parallelen Kandidaten. Vor jedem Release sind
+  Textfassung, Territorien, Credits und Rechte zu dokumentieren. Gemeinfreiheit
+  eines Gedichts erlaubt niemals die Übernahme fremder Aufnahmen, Melodien oder
+  Arrangements.
 
 > Zuerst lesen: `BEATS2YOUTUBE_CHECKLIST.md`. Repo ist öffentlich (github.com/PtrX/ai-music-factory).
 
