@@ -30,6 +30,13 @@ _Stand: 2026-07-03 abend_
   Textfassung, Territorien, Credits und Rechte zu dokumentieren. Gemeinfreiheit
   eines Gedichts erlaubt niemals die Übernahme fremder Aufnahmen, Melodien oder
   Arrangements.
+- Entscheidung 2026-07-14: `Не жалею, не зову, не плачу…` ist als nächster
+  3AHAR-Release geplant. Bestehendes Projekt `cmqjyl4to000988ktvn86vuvu`,
+  Variante B `cmqjyl4tr000c88ktwygooziy`: Track 0 hat Score 9, Track 1 ist
+  favorisiert, hat aber Score 7; vor Release beide erneut anhören. Kein WAV ist
+  in AMF markiert. Neue Produktionsreihenfolge davor: (1) `Заметался пожар
+  голубой…`, (2) `Отговорила роща золотая…`, (3) `Пускай ты выпита другим…`.
+  Produktion bedeutet noch keine Release-Freigabe.
 
 > Zuerst lesen: `BEATS2YOUTUBE_CHECKLIST.md`. Repo ist öffentlich (github.com/PtrX/ai-music-factory).
 
