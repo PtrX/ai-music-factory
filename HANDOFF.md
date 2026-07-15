@@ -31,12 +31,17 @@ _Stand: 2026-07-03 abend_
   eines Gedichts erlaubt niemals die Übernahme fremder Aufnahmen, Melodien oder
   Arrangements.
 - Entscheidung 2026-07-14: `Не жалею, не зову, не плачу…` ist als nächster
-  3AHAR-Release geplant. Bestehendes Projekt `cmqjyl4to000988ktvn86vuvu`,
-  Variante B `cmqjyl4tr000c88ktwygooziy`: Track 0 hat Score 9, Track 1 ist
-  favorisiert, hat aber Score 7; vor Release beide erneut anhören. Kein WAV ist
-  in AMF markiert. Neue Produktionsreihenfolge davor: (1) `Заметался пожар
-  голубой…`, (2) `Отговорила роща золотая…`, (3) `Пускай ты выпита другим…`.
-  Produktion bedeutet noch keine Release-Freigabe.
+  3AHAR-Release festgelegt worden und wurde am 15.07.2026 bei DistroKid samt
+  Lyrics eingereicht. Projekt `cmqjyl4to000988ktvn86vuvu`, Variante B
+  `cmqjyl4tr000c88ktwygooziy`, finaler Track 1
+  `cmqk0zamz000310b2htj1azin`; kein WAV vorhanden, verifizierter Original-MP3
+  verwendet. Zieltermin 17.07.2026. DistroKid UUID:
+  `ECC2E228-A328-483A-BD73BCACC7CE8D9F`. Dashboard:
+  `https://distrokid.com/dashboard/album/?albumuuid=ECC2E228-A328-483A-BD73BCACC7CE8D9F`.
+  Am 16.07. Verarbeitung, Lyrics und Store-Rückmeldungen prüfen. Danach
+  nächsten Release aus der rechtegeprüften Gedichtliste planen und nur eine
+  kleine kuratierte Gruppe neuer Songs generieren. Produktion bedeutet noch
+  keine Release-Freigabe.
 - Automatischer Release-Paket-Standard: Bei jedem von Peter benannten nächsten
   Release ohne erneute Grundsatzfrage Audio-Master, 3000×3000-Cover,
   DistroKid-fertige Lyrics/Metadaten/Credits, eine fotorealistische 9:16-Loop,
