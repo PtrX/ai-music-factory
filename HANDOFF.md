@@ -1,6 +1,23 @@
 # HANDOFF — AI Music Factory
 _Stand: 2026-07-03 abend_
 
+## Verbindliches Release-Visual-Stop-Gate — 2026-07-22
+
+- Wenn Peter einen Track „rausbringen“ oder releasen will, **vor jeder Bild-
+  oder Videogenerierung** zuerst `RELEASE_ASSET_CHECKLIST.md` und danach die
+  zentrale Checkliste unter
+  `/Users/peter/claude_code/DistroKid/docs/RELEASE_CHECKLIST_AND_LESSONS_LEARNED.md`
+  abarbeiten.
+- Jedes Release-Visual muss das offizielle `3AHAR`-Logo/Sonnensignet und den
+  exakten Songtitel permanent enthalten. Das gilt für Cover, 9:16-Bild,
+  Canvas, Reel, Social-Visual, Video und YouTube-Thumbnail. Bei Motion bleiben
+  Logo und Titel in jedem Frame sichtbar, korrekt, unverformt und stabil.
+- `3000 × 3000`-Cover und `1920 × 1080`-YouTube-Thumbnail sind Must-haves und
+  enthalten beide Logo und Titel.
+- Textlose Release-Bilder dürfen nicht als Entwurf gezeigt, nicht animiert und
+  nicht weiterverarbeitet werden. Erst den Brief korrigieren und die Identität
+  sperren.
+
 ## Wichtige Ergänzung — 2026-07-14 / 3AHAR Distribution
 
 - Lokaler Distribution-Workspace und maßgebliche Release-Dokumentation:

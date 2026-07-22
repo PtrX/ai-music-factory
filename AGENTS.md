@@ -55,6 +55,26 @@ templates/hf-template/     — Hyperframes HTML-Template + gsap.min.js
 
 ## Wichtige Gotchas
 
+### Verbindliches Release-Visual-Stop-Gate
+
+Wenn Peter sagt, dass ein Track/Song veröffentlicht oder „rausgebracht“ werden
+soll, gilt vor der ersten Bild- oder Videogenerierung zwingend:
+
+1. Zuerst die lokale Pflicht-Checkliste `RELEASE_ASSET_CHECKLIST.md` und danach
+   die zentrale Release-Checkliste unter
+   `/Users/peter/claude_code/DistroKid/docs/RELEASE_CHECKLIST_AND_LESSONS_LEARNED.md`
+   abarbeiten.
+2. Jedes Release-Visual enthält die offizielle `3AHAR`-Wortmarke mit
+   Sonnensignet und den exakten Songtitel als permanent eingebrannte Elemente.
+3. Das gilt für Cover, 9:16-Bild, Canvas, Reel, Social-Visual, Video und
+   YouTube-Thumbnail; bei Motion müssen Logo und Titel in jedem Frame sichtbar,
+   korrekt, unverformt und stabil bleiben.
+4. Das `3000 × 3000`-Cover und das `1920 × 1080`-YouTube-Thumbnail sind
+   Pflichtbestandteile jedes Release-Pakets und enthalten beide Logo und Titel.
+5. Textlose Release-Bilder sind keine Entwürfe oder Kandidaten: nicht Peter
+   zeigen, nicht animieren und nicht weiterverarbeiten. Erst Brief/Prompt
+   korrigieren und die visuelle Identität sperren.
+
 ### Storage-Pfade
 Alle Dateipfade (Audio, Covers, Clips, Token-Files) müssen `STORAGE_BASE_PATH` aus der Umgebung verwenden:
 ```typescript
