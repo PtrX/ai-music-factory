@@ -876,8 +876,17 @@ async function handleIntroRenderJob(job: { id: string; payload: string; variantI
     colorIntensity: 0.6,
     searchQuery: introBackgroundQuery(identity.visualTrack, introSeed),
   }
-  const bgClip = await findClipForDirective(bgDirective, project.id)
-  if (!bgClip) throw new Error("Could not find background clip for intro")
+  const customIntroPath = path.join(project.folderPath, "assets/custom-intro.mp4")
+  let backgroundClipPath: string
+  try {
+    await fs.access(customIntroPath)
+    backgroundClipPath = customIntroPath
+    console.log(`[IntroRender] Using project intro: ${customIntroPath}`)
+  } catch {
+    const bgClip = await findClipForDirective(bgDirective, project.id)
+    if (!bgClip) throw new Error("Could not find background clip for intro")
+    backgroundClipPath = bgClip.localPath
+  }
 
   const introOutputPath = path.join(project.folderPath, `outputs/videos/${track.id}-intro.mp4`)
 
@@ -885,7 +894,7 @@ async function handleIntroRenderJob(job: { id: string; payload: string; variantI
     title: project.title,
     version: track.versionName || track.variant.name || "Original Mix",
     accentColor: identity.colorAccent,
-    backgroundClipPath: bgClip.localPath,
+    backgroundClipPath,
     introDurationSec,
     outputPath: introOutputPath,
   })

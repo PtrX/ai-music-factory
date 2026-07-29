@@ -12,10 +12,69 @@ export interface ClipResult {
   durationSec: number
   width: number
   height: number
-  source: "cache" | "pexels" | "pixabay" | "fallback"
+  source: "cache" | "pexels" | "pixabay" | "fallback" | "project"
 }
 
 const CLIPS_BASE = path.join(STORAGE_BASE, "clips")
+
+async function collectProjectClipPaths(dir: string): Promise<string[]> {
+  const paths: string[] = []
+  const entries = await fs.readdir(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    if (entry.name === "rejected-non-game") continue
+    const entryPath = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      paths.push(...await collectProjectClipPaths(entryPath))
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".mp4")) {
+      paths.push(entryPath)
+    }
+  }
+  return paths
+}
+
+async function loadProjectClipPool(
+  projectId: string,
+  targetCount: number,
+  trackSeed: number
+): Promise<ClipResult[]> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { folderPath: true },
+  })
+  if (!project) return []
+
+  const customClipsDir = path.join(project.folderPath, "assets/custom-clips")
+  let paths: string[]
+  try {
+    paths = (await collectProjectClipPaths(customClipsDir)).sort()
+  } catch {
+    return []
+  }
+
+  // Stable seeded shuffle: different track versions get a different order,
+  // while retries of the same track keep the same source pool.
+  let state = (trackSeed >>> 0) || 0x9e3779b9
+  const random = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    return state / 0x100000000
+  }
+  for (let i = paths.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    const current = paths[i]
+    paths[i] = paths[j]
+    paths[j] = current
+  }
+
+  return paths.slice(0, targetCount).map((localPath) => ({
+    id: `project-${path.relative(customClipsDir, localPath)}`,
+    url: "",
+    localPath,
+    durationSec: 0,
+    width: 1920,
+    height: 1080,
+    source: "project" as const,
+  }))
+}
 
 async function downloadClip(url: string, destPath: string): Promise<boolean> {
   try {
@@ -207,9 +266,15 @@ export async function findClipForDirective(
 export async function buildClipPool(
   directives: VisualDirective[],
   targetCount: number,
-  _projectId: string,
+  projectId: string,
   trackSeed = 0
 ): Promise<ClipResult[]> {
+  const projectPool = await loadProjectClipPool(projectId, targetCount, trackSeed)
+  if (projectPool.length > 0) {
+    console.log(`[ClipPool] Built pool: ${projectPool.length} project clips`)
+    return projectPool
+  }
+
   // Collect unique queries from directives
   const uniqueQueries = [...new Set(directives.map(d => d.searchQuery))]
   const minDur = 4 // minimum clip duration in seconds
