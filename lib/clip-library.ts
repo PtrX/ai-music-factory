@@ -58,14 +58,46 @@ async function loadProjectClipPool(
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0
     return state / 0x100000000
   }
-  for (let i = paths.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1))
-    const current = paths[i]
-    paths[i] = paths[j]
-    paths[j] = current
+
+  // Shuffle within content groups, then interleave them. This prevents a
+  // source-folder block (e.g. only dribbles, then only goals) in the edit.
+  const groups = new Map<string, string[]>()
+  for (const clipPath of paths) {
+    const group = path.relative(customClipsDir, clipPath).split(path.sep)[0] || "other"
+    const groupedPaths = groups.get(group) ?? []
+    groupedPaths.push(clipPath)
+    groups.set(group, groupedPaths)
+  }
+  for (const groupedPaths of groups.values()) {
+    for (let i = groupedPaths.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1))
+      const current = groupedPaths[i]
+      groupedPaths[i] = groupedPaths[j]
+      groupedPaths[j] = current
+    }
   }
 
-  return paths.slice(0, targetCount).map((localPath) => ({
+  const preferredOrder = ["goals", "dribbling", "skills"]
+  const groupOrder = [
+    ...preferredOrder.filter((name) => groups.has(name)),
+    ...Array.from(groups.keys()).filter((name) => !preferredOrder.includes(name)).sort(),
+  ]
+  const orderedPaths: string[] = []
+  let groupIndex = 0
+  while (orderedPaths.length < paths.length) {
+    let added = false
+    for (const groupName of groupOrder) {
+      const groupedPaths = groups.get(groupName) ?? []
+      if (groupIndex < groupedPaths.length) {
+        orderedPaths.push(groupedPaths[groupIndex])
+        added = true
+      }
+    }
+    if (!added) break
+    groupIndex++
+  }
+
+  return orderedPaths.slice(0, targetCount).map((localPath) => ({
     id: `project-${path.relative(customClipsDir, localPath)}`,
     url: "",
     localPath,

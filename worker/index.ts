@@ -11,7 +11,7 @@ import { writeFile } from "@/lib/storage"
 import { analyzeTrackWithAI } from "@/lib/ai-rating"
 import { analyzeAudioLocally } from "@/lib/librosa-analysis"
 import { extractLyricsFromAudio, extractLyricsWithTimestamps, extractLyricsGeminiFallback, WhisperSegment } from "@/lib/lyrics-extractor"
-import { buildDirectives, generateArtistIdentity, introBackgroundQuery } from "@/lib/visual-director"
+import { buildDirectives, generateArtistIdentity, introBackgroundQuery, type VisualDirective } from "@/lib/visual-director"
 import { fetchAndCacheSunoCredits } from "@/lib/system-status"
 import { buildClipPool, findClipForDirective } from "@/lib/clip-library"
 import { assembleVideo, assembleFullVideo } from "@/lib/video-assembler"
@@ -21,6 +21,64 @@ import { sendTelegramNotification, sendTrackCard } from "@/lib/telegram"
 import { coverPathForAudioFile, pickProviderCoverUrl } from "@/lib/tracks/cover"
 
 const POLL_INTERVAL = 5000
+
+function coalesceProjectDirectives(
+  directives: VisualDirective[],
+  minDurationSec = 5,
+  maxDurationSec = 7
+): VisualDirective[] {
+  if (directives.length < 2) return directives
+
+  const merged: VisualDirective[] = []
+  let group: VisualDirective[] = []
+
+  const flush = () => {
+    if (group.length === 0) return
+    const first = group[0]
+    const last = group[group.length - 1]
+    const strongest = group.reduce((best, directive) => (
+      directive.colorIntensity > best.colorIntensity ? directive : best
+    ), first)
+    const duration = last.endSec - first.startSec
+    merged.push({
+      ...first,
+      endSec: last.endSec,
+      energy: strongest.energy,
+      clipDurationSec: duration,
+      cutFrequency: 1 / duration,
+      effect: strongest.effect,
+      visualStyle: strongest.visualStyle,
+      colorIntensity: strongest.colorIntensity,
+    })
+    group = []
+  }
+
+  for (const directive of directives) {
+    if (group.length === 0) {
+      group.push(directive)
+      continue
+    }
+    const currentDuration = group[group.length - 1].endSec - group[0].startSec
+    const candidateDuration = directive.endSec - group[0].startSec
+    if (currentDuration >= minDurationSec && candidateDuration > maxDurationSec) {
+      flush()
+    }
+    group.push(directive)
+  }
+  flush()
+
+  // Avoid a tiny final shot by merging it back into the previous plan.
+  const final = merged[merged.length - 1]
+  const previous = merged[merged.length - 2]
+  if (previous && final && final.clipDurationSec < minDurationSec) {
+    previous.endSec = final.endSec
+    previous.clipDurationSec = previous.endSec - previous.startSec
+    previous.cutFrequency = 1 / previous.clipDurationSec
+    merged.pop()
+  }
+
+  return merged
+}
 
 function toSrtTime(sec: number): string {
   const h = Math.floor(sec / 3600)
@@ -37,10 +95,11 @@ function buildSrt(segments: WhisperSegment[]): string {
     .join("\n\n")
 }
 
-// YouTube title: "Song (Version/Remix) - PtrX", clamped to the 100-char limit.
+// Keep an explicit artist credit in the project title; otherwise use PtrX.
 function buildYtTitle(songTitle: string, versionName: string | null): string {
   const version = (versionName || "Mix").trim()
-  const suffix = ` (${version}) - PtrX`
+  const artistSuffix = /\sby\s+\S/i.test(songTitle) ? "" : " - PtrX"
+  const suffix = ` (${version})${artistSuffix}`
   const MAX = 100
   let title = `${songTitle.trim()}${suffix}`
   if (title.length > MAX) {
@@ -655,7 +714,12 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     .filter((w, i, arr) => arr.indexOf(w) === i)
     .slice(0, 10)
 
-  const directives = buildDirectives(structure, identityData, project.genre, audioDur, introOffsetSec, extraKeywords)
+  let directives = buildDirectives(structure, identityData, project.genre, audioDur, introOffsetSec, extraKeywords)
+  try {
+    await fs.access(path.join(project.folderPath, "assets/custom-clips"))
+    directives = coalesceProjectDirectives(directives)
+    console.log(`[VideoRender] Coalesced custom edit to ${directives.length} long-form directives`)
+  } catch { /* default beat-synced edit for stock clip projects */ }
 
   // Build a pool of 60+ unique clips upfront, then assign cyclically
   const targetPoolSize = Math.max(60, Math.ceil(audioDur / 3))
@@ -791,7 +855,12 @@ async function handleYoutubeUploadJob(job: { id: string; payload: string; varian
     videoPath: path.join(project.folderPath, videoJob.outputPath),
     title,
     description,
-    tags: [project.genre, project.mood, "PtrX", "AI Music"].filter(Boolean) as string[],
+    tags: [
+      project.genre,
+      project.mood,
+      /\sby\s+EDR\b/i.test(project.title) ? "EDR" : "PtrX",
+      "AI Music",
+    ].filter(Boolean) as string[],
   })
 
   await prisma.videoJob.update({
