@@ -1,4 +1,4 @@
-import { MusicGenerationProvider, SongInput, JobStatus, AudioFile } from "./interface"
+import { MusicGenerationProvider, SongInput, JobStatus, AudioFile, WavConversionStatus } from "./interface"
 
 type SunoApiTrack = {
   id: string
@@ -109,6 +109,52 @@ export class SunoApiOrgProvider implements MusicGenerationProvider {
 
     return mapSunoApiTracks(jobId, sunoData)
   }
+
+  async createWavConversion(taskId: string, audioId: string): Promise<{ jobId: string }> {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "")
+    const response = await fetch(`${this.baseUrl}/wav/generate`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        taskId,
+        audioId,
+        callBackUrl: `${appUrl}/api/webhook/sunoapi-org`,
+      }),
+    })
+
+    const data = await response.json().catch(() => null)
+    if (!response.ok || (data?.code != null && data.code !== 200) || !data?.data?.taskId) {
+      throw new Error(`sunoapi.org WAV conversion error ${response.status}: ${data?.msg || JSON.stringify(data)}`)
+    }
+    return { jobId: data.data.taskId }
+  }
+
+  async getWavConversionStatus(jobId: string): Promise<WavConversionStatus> {
+    const response = await fetch(
+      `${this.baseUrl}/wav/record-info?taskId=${encodeURIComponent(jobId)}`,
+      { headers: this.headers() }
+    )
+
+    if (!response.ok) {
+      throw new Error(`sunoapi.org WAV status error ${response.status}`)
+    }
+
+    return mapWavConversionRecord(await response.json())
+  }
+}
+
+export function mapWavConversionRecord(data: any): WavConversionStatus {
+  const record = data?.data
+  const status = String(record?.successFlag || record?.status || "").toUpperCase()
+  const url = record?.response?.audioWavUrl || record?.response?.audio_wav_url
+
+  // A callback can fail because the worker uses an internal app URL, while
+  // polling still returns the completed conversion and its download URL.
+  if (url) return { status: "completed", url }
+  if (["CREATE_TASK_FAILED", "GENERATE_WAV_FAILED", "FAILED", "FAIL"].includes(status)) {
+    return { status: "failed", error: record?.errorMessage || data?.msg || "WAV conversion failed" }
+  }
+  return { status: "processing" }
 }
 
 export function mapSunoApiTracks(jobId: string, sunoData: SunoApiTrack[]): AudioFile[] {

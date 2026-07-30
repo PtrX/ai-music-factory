@@ -171,6 +171,7 @@ export async function GET() {
                 scoreTotal: true,
                 structureJson: true,
                 audioPath: true,
+                wavPath: true,
                 coverPath: true,
                 sunoImageUrl: true,
                 sunoSourceImageUrl: true,
@@ -277,7 +278,7 @@ export async function GET() {
               coverUrl,
               video: videoState,
               release: t.distributionReleases[0] ?? null,
-              hasWav: /\.wav$/i.test(t.audioPath) || archivedWavByProject.get(p.id) === true || t.distributionReleases.some((release) => /\.wav$/i.test(release.submittedMasterPath ?? "")),
+              hasWav: Boolean(t.wavPath) || /\.wav$/i.test(t.audioPath) || archivedWavByProject.get(p.id) === true || t.distributionReleases.some((release) => /\.wav$/i.test(release.submittedMasterPath ?? "")),
               ...structure,
             }
           })

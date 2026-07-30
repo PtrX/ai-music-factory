@@ -134,6 +134,7 @@ interface Track {
   id: string
   index: number
   audioPath: string
+  wavPath: string | null
   coverPath: string | null
   sunoImageUrl: string | null
   sunoSourceImageUrl: string | null
@@ -1366,6 +1367,16 @@ export default function ProjectDetail() {
                                         title="SRT-Untertitel herunterladen"
                                       >
                                         SRT ↓
+                                      </a>
+                                    )}
+                                    {track.wavPath && (
+                                      <a
+                                        href={`/api/audio/${folderName}/${track.wavPath}`}
+                                        download
+                                        className="inline-flex items-center gap-1 h-6 text-xs px-2 border rounded hover:bg-muted transition-colors"
+                                        title="WAV-Master herunterladen"
+                                      >
+                                        WAV ↓
                                       </a>
                                     )}
                                     <Button

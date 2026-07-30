@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mapSunoApiTracks } from "../lib/providers/music/sunoapi-org"
+import { mapSunoApiTracks, mapWavConversionRecord } from "../lib/providers/music/sunoapi-org"
 
 const files = mapSunoApiTracks("task-123", [
   {
@@ -23,5 +23,15 @@ assert.equal(files[0].providerSourceImageUrl, "https://cdn.suno.ai/cover.jpeg")
 assert.equal(files[0].providerSourceAudioUrl, "https://cdn.suno.ai/audio.mp3")
 assert.equal(files[0].durationSec, 322.68)
 assert.match(files[0].filename, /^track-d225d44a-v1\.mp3$/)
+
+assert.deepEqual(mapWavConversionRecord({
+  data: { successFlag: "SUCCESS", response: { audioWavUrl: "https://example.com/audio.wav" } },
+}), { status: "completed", url: "https://example.com/audio.wav" })
+assert.deepEqual(mapWavConversionRecord({
+  data: { successFlag: "GENERATE_WAV_FAILED", errorMessage: "conversion failed" },
+}), { status: "failed", error: "conversion failed" })
+assert.deepEqual(mapWavConversionRecord({
+  data: { successFlag: "PENDING" },
+}), { status: "processing" })
 
 console.log("sunoapi metadata tests passed")

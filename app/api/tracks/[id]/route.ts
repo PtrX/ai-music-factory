@@ -61,6 +61,7 @@ export async function DELETE(
 
     const projectFolder = track.variant.project.folderPath
     await removeRelativeFile(projectFolder, track.audioPath)
+    await removeRelativeFile(projectFolder, track.wavPath)
     await removeRelativeFile(projectFolder, track.coverPath)
     await removeRelativeFile(projectFolder, track.srtPath)
     await removeRelativeFile(projectFolder, track.audioPath.replace(/\.[^.]+$/, ".structure.json"))

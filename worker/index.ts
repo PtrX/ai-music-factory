@@ -284,7 +284,7 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
   // by a previous attempt must not produce duplicate Track rows.
   const existingTracks = await prisma.track.findMany({
     where: { variantId },
-    select: { sunoTaskId: true, sunoAudioId: true, index: true, versionName: true },
+    select: { id: true, sunoTaskId: true, sunoAudioId: true, wavPath: true, index: true, versionName: true },
   })
   const existingNames = new Set(
     existingTracks.map(t => t.versionName).filter(Boolean) as string[]
@@ -307,6 +307,7 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
 
   let primaryAudioPath: string | null = null
   const createdTrackIds: string[] = []
+  const wavTrackIds = new Set<string>()
   for (let i = 0; i < files.length; i++) {
     const file = files[i]
     const audioPath = `outputs/audio/${file.filename}`
@@ -316,13 +317,14 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
     // previous attempt — matched by provider audio id, falling back to
     // taskId+index. A fresh generation run has a new taskId, so its files
     // are never skipped even when the variant already holds older tracks.
-    const alreadySaved = existingTracks.some(t =>
+    const savedTrack = existingTracks.find(t =>
       (file.providerAudioId != null && t.sunoAudioId === file.providerAudioId) ||
       (file.providerAudioId == null && file.providerTaskId != null &&
         t.sunoTaskId === file.providerTaskId && t.index === i)
     )
-    if (alreadySaved) {
+    if (savedTrack) {
       console.log(`[Worker] Skipping file ${i + 1}/${files.length} (${file.filename}) — track already saved by a previous attempt`)
+      if (!savedTrack.wavPath && savedTrack.sunoTaskId && savedTrack.sunoAudioId) wavTrackIds.add(savedTrack.id)
       if (i === 0) primaryAudioPath = audioPath
       continue
     }
@@ -424,6 +426,7 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
         },
       })
       createdTrackIds.push(createdTrack.id)
+      if (createdTrack.sunoTaskId && createdTrack.sunoAudioId) wavTrackIds.add(createdTrack.id)
 
       if (analysis) {
         console.log(`[Worker] AI analysis track ${i + 1}: score=${analysis.scores?.scoreTotal}, sections=${analysis.structure?.sections?.length}, name="${analysis.structure?.suggestedVersionName}"`)
@@ -440,6 +443,10 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
       status: "completed",
     },
   })
+
+  for (const trackId of wavTrackIds) {
+    await enqueue("wav_download", variant.id, { trackId })
+  }
 
   await markDone(job.id, { files: files.map((f) => f.filename) })
 
@@ -481,6 +488,83 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
       data: { status: "completed" },
     })
   }
+}
+
+async function handleWavDownloadJob(job: { id: string; payload: string }) {
+  const { trackId } = JSON.parse(job.payload)
+  if (!trackId) throw new Error("WAV download job is missing trackId")
+
+  const track = await prisma.track.findUnique({
+    where: { id: trackId },
+    include: { variant: { include: { project: true } } },
+  })
+  if (!track) throw new Error(`Track not found: ${trackId}`)
+  if (track.wavPath) {
+    await markDone(job.id, { trackId, wavPath: track.wavPath, alreadyDownloaded: true })
+    return
+  }
+  if (!track.sunoTaskId || !track.sunoAudioId) {
+    throw new Error(`Track ${trackId} has no Suno task/audio ID for WAV conversion`)
+  }
+
+  const provider = getMusicProvider()
+  if (!provider.createWavConversion || !provider.getWavConversionStatus) {
+    throw new Error("Configured music provider does not support WAV conversion")
+  }
+
+  let conversionTaskId = track.wavConversionTaskId
+  if (!conversionTaskId) {
+    const conversion = await provider.createWavConversion(track.sunoTaskId, track.sunoAudioId)
+    conversionTaskId = conversion.jobId
+    await prisma.track.update({
+      where: { id: track.id },
+      data: { wavConversionTaskId: conversionTaskId },
+    })
+    console.log(`[Worker] Submitted WAV conversion for track ${track.id}: provider task ${conversionTaskId}`)
+  } else {
+    console.log(`[Worker] Resuming WAV conversion for track ${track.id}: provider task ${conversionTaskId}`)
+  }
+
+  let wavUrl: string | undefined
+  for (let i = 0; i < 180; i++) {
+    const status = await provider.getWavConversionStatus(conversionTaskId)
+    if (status.status === "completed") {
+      wavUrl = status.url
+      break
+    }
+    if (status.status === "failed") {
+      await prisma.track.update({
+        where: { id: track.id },
+        data: { wavConversionTaskId: null },
+      })
+      throw new Error(status.error || "WAV conversion failed")
+    }
+    if (i % 6 === 0) {
+      console.log(`[Worker] WAV conversion ${conversionTaskId}: processing (${i + 1}/180)`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000))
+  }
+  if (!wavUrl) throw new Error("WAV conversion timed out")
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 300_000)
+  let buffer: Buffer
+  try {
+    const response = await fetch(wavUrl, { signal: controller.signal })
+    if (!response.ok) throw new Error(`Failed to download WAV: ${response.status}`)
+    buffer = Buffer.from(await response.arrayBuffer())
+  } finally {
+    clearTimeout(timeout)
+  }
+
+  const wavPath = track.audioPath.replace(/\.[^.]+$/, ".wav")
+  await writeFile(track.variant.project.folderPath, wavPath, buffer)
+  await prisma.track.update({
+    where: { id: track.id },
+    data: { wavPath },
+  })
+  await markDone(job.id, { trackId, wavPath })
+  console.log(`[Worker] Saved WAV for track ${track.id}: ${wavPath}`)
 }
 
 async function handleAnalyzeImportedTrack(job: { id: string; payload: string; variantId: string | null }) {
@@ -991,6 +1075,9 @@ async function processJob() {
         break
       case "music_api":
         await handleMusicJob(job)
+        break
+      case "wav_download":
+        await handleWavDownloadJob(job)
         break
       case "analyze_imported_track":
         await handleAnalyzeImportedTrack(job)

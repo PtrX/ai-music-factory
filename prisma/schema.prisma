@@ -64,6 +64,8 @@ model Track {
   variantId      String
   index          Int
   audioPath      String
+  wavPath        String?
+  wavConversionTaskId String?
   sunoTaskId     String?
   sunoAudioId    String?
   sunoModelName  String?

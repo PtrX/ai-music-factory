@@ -28,8 +28,16 @@ export type AudioFile = {
   durationSec?: number
 }
 
+export type WavConversionStatus = {
+  status: "processing" | "completed" | "failed"
+  url?: string
+  error?: string
+}
+
 export interface MusicGenerationProvider {
   createSong(input: SongInput): Promise<{ jobId: string }>
   getStatus(jobId: string): Promise<JobStatus>
   downloadResult(jobId: string): Promise<AudioFile[]>
+  createWavConversion?(taskId: string, audioId: string): Promise<{ jobId: string }>
+  getWavConversionStatus?(jobId: string): Promise<WavConversionStatus>
 }
