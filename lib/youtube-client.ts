@@ -161,15 +161,40 @@ async function getValidAccessToken(): Promise<string> {
 // file exists — a revoked/expired refresh token leaves the file in place
 // but every upload fails until re-auth (see /api/auth/youtube).
 export async function checkYouTubeAuth(): Promise<{ connected: boolean; detail?: string }> {
-  const tokens = await loadTokens()
+  let tokens = await loadTokens()
   if (!tokens) return { connected: false, detail: "login fehlt" }
-  if (tokens.expiry_date >= Date.now() + 60000) return { connected: true }
+
   try {
-    await refreshAccessToken(tokens.refresh_token)
-    return { connected: true }
+    if (tokens.expiry_date < Date.now() + 60000) {
+      tokens = await refreshAccessToken(tokens.refresh_token)
+    }
+
+    let probe = await probeYouTubeAccessToken(tokens.access_token)
+    if (probe.ok) return { connected: true }
+
+    // A token can be revoked or otherwise rejected before its local expiry
+    // timestamp. Refresh once on 401, then verify the replacement against the
+    // actual YouTube API before showing the connection as healthy.
+    if (probe.status === 401) {
+      tokens = await refreshAccessToken(tokens.refresh_token)
+      probe = await probeYouTubeAccessToken(tokens.access_token)
+      if (probe.ok) return { connected: true }
+    }
+
+    return {
+      connected: false,
+      detail: probe.status === 401 ? "Token ungültig" : `YouTube API ${probe.status}`,
+    }
   } catch {
-    return { connected: false, detail: "Token abgelaufen" }
+    return { connected: false, detail: "Token ungültig" }
   }
+}
+
+export async function probeYouTubeAccessToken(accessToken: string): Promise<{ ok: boolean; status: number }> {
+  const res = await fetch("https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return { ok: res.ok, status: res.status }
 }
 
 // Upload an SRT as a toggleable YouTube caption track.
