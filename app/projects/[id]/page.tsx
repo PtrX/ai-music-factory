@@ -872,6 +872,7 @@ export default function ProjectDetail() {
                 const steps = project.variants.map(v => {
                   const f = files[v.id] || {}
                   if (v.status === "completed") return { label: v.label, text: "Fertig", icon: "✓", color: "text-green-600" }
+                  if (v.status === "ready") return { label: v.label, text: "Bereit", icon: "✓", color: "text-green-600" }
                   if (v.status === "importing") return { label: v.label, text: "Wird importiert…", icon: "spin", color: "text-purple-500" }
                   if (v.status === "analyzing") return { label: v.label, text: "KI analysiert…", icon: "spin", color: "text-blue-500" }
                   if (v.status === "generating") return { label: v.label, text: "Suno generiert…", icon: "spin", color: "text-blue-600" }
@@ -1060,7 +1061,7 @@ export default function ProjectDetail() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                      {!f.lyrics && !["completed", "draft"].includes(v.status) && (
+                      {project.vocalType !== "instrumental" && !f.lyrics && !["completed", "draft"].includes(v.status) && (
                         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Lyrics werden generiert…
