@@ -918,7 +918,7 @@ export default function ProjectDetail() {
                   <div className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-4">{project.brief}</div>
                 </div>
               )}
-              {project.status !== "completed" && project.variants.some(v => v.sourceType !== "upload") && (() => {
+              {project.status !== "completed" && project.variants.some(v => v.sourceType !== "upload" && !["ready", "completed"].includes(v.status)) && (() => {
                 const allReady = project.variants.length > 0 && project.variants.every(v => {
                   const f = files[v.id] || {}
                   return (f.lyrics || project.vocalType === "instrumental") && f.sunoPrompt
