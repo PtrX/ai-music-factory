@@ -111,7 +111,7 @@ async function loadProjectClipPool(
 async function downloadClip(url: string, destPath: string): Promise<boolean> {
   try {
     await fs.mkdir(path.dirname(destPath), { recursive: true })
-    const res = await fetch(url)
+    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) })
     if (!res.ok) return false
     await fs.writeFile(destPath, Buffer.from(await res.arrayBuffer()))
     return true
@@ -134,9 +134,12 @@ async function searchPexelsMany(
     const q = encodeURIComponent(query)
     const res = await fetch(
       `https://api.pexels.com/videos/search?query=${q}&per_page=${Math.min(count * 2, 15)}&page=${page}&min_duration=${Math.floor(minDuration)}&orientation=landscape`,
-      { headers: { Authorization: apiKey } }
+      { headers: { Authorization: apiKey }, signal: AbortSignal.timeout(20_000) }
     )
-    if (!res.ok) return []
+    if (!res.ok) {
+      console.warn(`[ClipPool] Pexels search failed: HTTP ${res.status}`)
+      return []
+    }
     const data = await res.json()
     const videos: unknown[] = data?.videos ?? []
     const results: PexelsResult[] = []
@@ -319,7 +322,8 @@ export async function buildClipPool(
   for (let qi = 0; qi < uniqueQueries.length && pool.length < targetCount; qi++) {
     const query = uniqueQueries[qi]
     const page = ((qi + Math.abs(trackSeed)) % 5) + 1 // pages 1–5, offset per track
-    const candidates = await searchPexelsMany(query, minDur, 4, page)
+    let candidates = await searchPexelsMany(query, minDur, 4, page)
+    if (candidates.length === 0 && page !== 1) candidates = await searchPexelsMany(query, minDur, 4, 1)
 
     for (const found of candidates) {
       if (seenIds.has(found.id)) continue

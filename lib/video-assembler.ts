@@ -1,9 +1,10 @@
 import * as fs from "fs/promises"
 import * as path from "path"
-import { execSync } from "child_process"
+import { execSync, execFileSync } from "child_process"
 import type { VisualDirective, ArtistIdentityData } from "./visual-director"
 import type { ClipResult } from "./clip-library"
 import { createStorageTempDir } from "./storage"
+import { getAudioDuration } from "./audio-duration"
 
 export interface AssemblyInput {
   audioPath: string
@@ -34,15 +35,12 @@ export async function assembleVideo(input: AssemblyInput): Promise<string> {
   for (let i = 0; i < directives.length; i++) {
     const d = directives[i]
     const clip = clips.get(i)
-    if (!clip) continue
+    if (!clip) throw new Error(`Missing source clip for segment ${i} — refusing timeline gaps`)
 
     const tmpClip = path.join(workDir, `seg-${i}-clip.mp4`)
     const clipDuration = Math.max(Math.min(d.clipDurationSec, d.endSec - d.startSec), 0.1)
-    // The white flash is CONCATENATED in front of the clip, so the clip must be
-    // trimmed by exactly the flash length (1 frame) — otherwise every flash-cut
-    // segment runs 1 frame long and the beat sync drifts cumulatively.
-    const flashDur = d.effect === "flash-cut" ? 1 / 30 : 0
-    const mainDur = clipDuration - flashDur
+    // Peak accents use clean cuts, without inserted white frames.
+    const mainDur = clipDuration
 
     // Provider APIs report duration as a rounded integer — probe the real file
     // so a short-delivering clip loops instead of producing a short segment
@@ -59,38 +57,25 @@ export async function assembleVideo(input: AssemblyInput): Promise<string> {
     // the segment would be truncated and the timeline would drift out of beat
     // sync. Looping every clip adds needless overhead, so make it conditional.
     const needsLoop = clipFileDur < seekOffset + clipDuration + 0.1
-    const loop = needsLoop ? "-stream_loop -1 " : ""
     // Scale to COVER the 1920x1080 frame and crop the overflow (zoom-to-fill)
     // instead of padding — never leaves black bars on non-16:9 source clips.
     // -pix_fmt yuv420p keeps all segments concat-copy-compatible.
-    execSync(
-      `ffmpeg -y ${loop}-ss ${seekOffset.toFixed(3)} -i "${clip.localPath}" -t ${mainDur.toFixed(3)} ` +
-      `-vf "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30" ` +
-      `-c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -an "${tmpClip}"`,
-      { timeout: 120000, stdio: "ignore" }
-    )
+    try {
+      execFileSync("ffmpeg", [
+        "-y", ...(needsLoop ? ["-stream_loop", "-1"] : []),
+        "-ss", seekOffset.toFixed(3), "-i", clip.localPath,
+        "-t", mainDur.toFixed(3),
+        "-vf", "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-an", tmpClip,
+      ], { timeout: 120_000, stdio: "pipe" })
+    } catch (err) {
+      throw new Error(`Segment ${i + 1}/${directives.length} (${mainDur.toFixed(3)}s, source ${clip.id}): ${(err as Error).message}`)
+    }
 
     const segFile = path.join(workDir, `seg-${i}.mp4`)
     segmentFiles.push(segFile)
 
-    if (d.effect === "flash-cut") {
-      const flashFile = path.join(workDir, `seg-${i}-flash.mp4`)
-      // Exactly ONE 30fps frame (lavfi d=0.04 rendered two), yuv420p so the
-      // `-c copy` concat below matches the main clip's codec parameters.
-      execSync(
-        `ffmpeg -y -f lavfi -i "color=c=white:s=1920x1080:r=30" -frames:v 1 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p "${flashFile}"`,
-        { timeout: 30000, stdio: "ignore" }
-      )
-      const cl = path.join(workDir, `seg-${i}-concat.txt`)
-      await fs.writeFile(cl, `file '${flashFile}'\nfile '${tmpClip}'\n`)
-      execSync(`ffmpeg -y -f concat -safe 0 -i "${cl}" -c copy "${segFile}"`,
-        { timeout: 60000, stdio: "ignore" })
-      await fs.unlink(flashFile).catch(() => {})
-    } else {
-      await fs.copyFile(tmpClip, segFile).catch(() => {
-        execSync(`cp "${tmpClip}" "${segFile}"`, { timeout: 30000, stdio: "ignore" })
-      })
-    }
+    await fs.copyFile(tmpClip, segFile)
     await fs.unlink(tmpClip).catch(() => {})
   }
 
@@ -136,7 +121,7 @@ export async function assembleFullVideo(input: {
       videoSource = combinedPath
     }
 
-    const audioDur = await getVideoDuration(audioPath)
+    const audioDur = getAudioDuration(audioPath)
     // A failed/`N/A` probe returns 0 — running ffmpeg with `-t 0` would write a
     // header-only MP4 that gets marked "ready" and could go to YouTube. Fail
     // loudly instead so the job errors and retries.
@@ -144,7 +129,10 @@ export async function assembleFullVideo(input: {
       throw new Error(`Could not determine audio duration for ${audioPath} — aborting assembly`)
     }
     const videoDur = await getVideoDuration(videoSource)
-    const loopFlag = videoDur < audioDur - 0.1 ? "-stream_loop -1" : ""
+    if (videoDur < audioDur - 0.1) {
+      throw new Error(`Video timeline too short (${videoDur}s vs ${audioDur}s) — refusing to loop the whole edit`)
+    }
+    const loopFlag = ""
 
     if (srtPath) {
       // Subtitles must be burned in → re-encode the video.

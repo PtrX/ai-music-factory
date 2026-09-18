@@ -2,6 +2,7 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import { execSync } from "child_process"
 import NodeID3 from "node-id3"
+import { getAudioDuration } from "@/lib/audio-duration"
 import { prisma } from "@/lib/db"
 import { dequeue, enqueue, markDone, markFailed, resetStaleJobs } from "@/lib/queue"
 import { getMusicProvider } from "@/lib/providers/music"
@@ -725,7 +726,7 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
   if (!track) throw new Error("Track not found")
   if (!track.structureJson) throw new Error("Track has no Song DNA — run KI-Analyse first")
 
-  const structure = JSON.parse(track.structureJson)
+  let structure = JSON.parse(track.structureJson)
   const project = track.variant.project
 
   const aiScoresHigh = (track.aiScoreTotal ?? 0) >= 6
@@ -738,22 +739,45 @@ async function handleVideoRenderJob(job: { id: string; payload: string; variantI
     colorPrimary: identity.colorPrimary,
     colorAccent: identity.colorAccent,
     signatureMotif: identity.signatureMotif,
-    visualTrack: identity.visualTrack,
+    visualTrack: visualTrack && visualTrack !== "auto" ? visualTrack : identity.visualTrack,
   }
 
   // Probe the real audio duration so the b-roll timeline can tile the WHOLE
   // track sample-accurately (structure.totalDurationSec is often missing).
   const audioFullPath = path.join(project.folderPath, track.audioPath)
-  let audioDur = structure.totalDurationSec || 240
-  try {
-    const probed = parseFloat(
-      execSync(
-        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioFullPath}"`,
-        { timeout: 10_000 }
-      ).toString().trim()
-    )
-    if (probed > 0) audioDur = probed
-  } catch { /* fall back to structure/default */ }
+  const audioDur = getAudioDuration(audioFullPath)
+
+  // Old imports and replaced audio can carry missing or stale timing data.
+  const beats = structure.beatTimes ?? []
+  const needsAnalysis = structure.timingDecoder !== "ffmpeg-pcm-v1"
+    || beats.length < 2
+    || structure.beatStrength?.length !== beats.length
+    || !Number.isFinite(structure.totalDurationSec)
+    || Math.abs(structure.totalDurationSec - audioDur) > 1
+    || beats[beats.length - 1] < audioDur - 16
+    || (structure.sections ?? []).some((s: { startSec: number; endSec: number }) =>
+      s.endSec <= s.startSec || s.endSec > audioDur + 1)
+  if (needsAnalysis) {
+    console.log(`[VideoRender] Refreshing missing/stale audio analysis for ${track.id}`)
+    const measured = await analyzeAudioLocally(audioFullPath)
+    if (!measured || measured.beatTimes.length < 2 || Math.abs(measured.duration - audioDur) > 1) {
+      throw new Error("Full-audio beat analysis failed or duration mismatch — refusing an unsynchronized render")
+    }
+    structure = {
+      ...structure,
+      downbeatPhase: undefined,
+      timingDecoder: "ffmpeg-pcm-v1",
+      totalDurationSec: measured.duration,
+      bpmDetected: measured.bpm,
+      keySignature: measured.key,
+      beatTimes: measured.beatTimes,
+      beatStrength: measured.beatStrength,
+      sections: measured.sections.map((s, i) => ({
+        ...s, type: i === 0 ? "intro" : i === measured.sections.length - 1 ? "outro" : "verse",
+      })),
+    }
+    await prisma.track.update({ where: { id: track.id }, data: { structureJson: JSON.stringify(structure) } })
+  }
 
   // The intro title card is concatenated BEFORE the b-roll, so the b-roll must
   // start at song-time = intro duration to keep cuts aligned to the beat.

@@ -25,7 +25,7 @@ export interface LibrosaResult {
 
 export async function analyzeAudioLocally(filePath: string): Promise<LibrosaResult | null> {
   try {
-    const { stdout } = await execFileAsync("python3", [SCRIPT, filePath], { timeout: 60_000 })
+    const { stdout } = await execFileAsync("python3", [SCRIPT, filePath], { timeout: 180_000 })
     const data = JSON.parse(stdout.trim())
     if (data.error) {
       console.error("[librosa] Script error:", data.error)

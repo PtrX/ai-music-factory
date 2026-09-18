@@ -24,6 +24,7 @@ export interface TrackSection {
 }
 
 export interface TrackStructure {
+  timingDecoder?: string
   sections: TrackSection[]
   suggestedVersionName: string
   bpmDetected: number | null
@@ -136,6 +137,7 @@ function mergeLibrosaWithLabels(
 
   return {
     sections,
+    timingDecoder: "ffmpeg-pcm-v1",
     suggestedVersionName,
     bpmDetected:      Math.round(librosa.bpm),
     keySignature:     librosa.key,

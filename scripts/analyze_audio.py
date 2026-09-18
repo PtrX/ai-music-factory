@@ -6,11 +6,20 @@ No API calls — runs fully offline.
 """
 import sys
 import json
+import subprocess
 import numpy as np
 import librosa
 
 def analyze(filepath):
-    y, sr = librosa.load(filepath, mono=True)
+    # Decode with the same backend as the video renderer. MP3 headers and
+    # libsndfile can disagree substantially on VBR/provider exports.
+    sr = 22050
+    decoded = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", filepath, "-vn", "-ac", "1",
+         "-ar", str(sr), "-f", "f32le", "pipe:1"],
+        check=True, capture_output=True, timeout=120,
+    )
+    y = np.frombuffer(decoded.stdout, dtype="<f4").copy()
     duration = float(librosa.get_duration(y=y, sr=sr))
 
     # BPM via beat tracking

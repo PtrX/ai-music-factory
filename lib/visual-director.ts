@@ -122,6 +122,7 @@ export function buildDirectives(
   extraKeywords: string[] = []
 ): VisualDirective[] {
   const beatTimes: number[] = (structure as any).beatTimes ?? []
+  if (beatTimes.length < 2) throw new Error("Beat analysis missing — analyze the full audio before rendering")
   const beatStrength: number[] = (structure as any).beatStrength ?? []
   const hasStrength = beatStrength.length === beatTimes.length && beatTimes.length > 0
 
@@ -255,6 +256,7 @@ export function buildDirectives(
     let pendingEnergy: Energy = (sectionAt(cursor).energy as Energy) ?? "low"
     for (const b of bounds) {
       const t = snap(b.time)
+      if (t >= audioEnd) break
       if (t <= cursor + MIN_CLIP) {
         if (b.accent) pendingEnergy = b.energy   // accent upgrades the held clip's punch
         continue
@@ -277,6 +279,9 @@ export function buildDirectives(
     }
   }
 
+  if (directives.some(d => d.endSec - d.startSec > 16)) {
+    throw new Error("Beat timeline has a gap longer than 16s — re-analyze the full audio before rendering")
+  }
   return directives
 }
 
