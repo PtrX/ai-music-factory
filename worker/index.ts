@@ -308,7 +308,6 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
 
   let primaryAudioPath: string | null = null
   const createdTrackIds: string[] = []
-  const wavTrackIds = new Set<string>()
   for (let i = 0; i < files.length; i++) {
     const file = files[i]
     const audioPath = `outputs/audio/${file.filename}`
@@ -325,7 +324,6 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
     )
     if (savedTrack) {
       console.log(`[Worker] Skipping file ${i + 1}/${files.length} (${file.filename}) — track already saved by a previous attempt`)
-      if (!savedTrack.wavPath && savedTrack.sunoTaskId && savedTrack.sunoAudioId) wavTrackIds.add(savedTrack.id)
       if (i === 0) primaryAudioPath = audioPath
       continue
     }
@@ -427,7 +425,6 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
         },
       })
       createdTrackIds.push(createdTrack.id)
-      if (createdTrack.sunoTaskId && createdTrack.sunoAudioId) wavTrackIds.add(createdTrack.id)
 
       if (analysis) {
         console.log(`[Worker] AI analysis track ${i + 1}: score=${analysis.scores?.scoreTotal}, sections=${analysis.structure?.sections?.length}, name="${analysis.structure?.suggestedVersionName}"`)
@@ -444,10 +441,6 @@ async function handleMusicJob(job: { id: string; payload: string; variantId: str
       status: "completed",
     },
   })
-
-  for (const trackId of wavTrackIds) {
-    await enqueue("wav_download", variant.id, { trackId })
-  }
 
   await markDone(job.id, { files: files.map((f) => f.filename) })
 

@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic"
 import { NextRequest, NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
+import { updateTrackFavorite } from "@/lib/tracks/favorite"
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -10,11 +11,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (typeof isFavorite !== "boolean") {
       return NextResponse.json({ error: "isFavorite must be a boolean" }, { status: 400 })
     }
-    const track = await prisma.track.update({
-      where: { id: params.id },
-      data: { isFavorite },
-      select: { id: true, isFavorite: true },
-    })
+    const track = await prisma.$transaction((tx) => updateTrackFavorite(tx, params.id, isFavorite))
     return NextResponse.json({ track })
   } catch (error) {
     console.error("Favorite toggle error:", error)
