@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef, type MouseEvent } from "react
 import Link from "next/link"
 import { projectGradient } from "@/lib/project-color"
 import { refreshSystemStatus } from "@/lib/status-refresh"
+import { MusicModelBadge } from "@/components/music-model-badge"
 
 const STATUS_LABEL: Record<string, string> = {
   completed: "fertig",
@@ -29,6 +30,7 @@ interface DistributionReleaseSummary {
 }
 
 interface TrackRow {
+  sunoModelName: string | null
   id: string
   index: number
   versionName: string | null
@@ -495,8 +497,9 @@ export default function Dashboard() {
                                       >
                                         {trackLabel}
                                       </Link>
-                                      <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                                      <div className="text-xs mt-0.5 flex items-center flex-wrap gap-2" style={{ color: "var(--text-muted)" }}>
                                         {STATUS_LABEL[v.status] ?? v.status}
+                                        <MusicModelBadge model={t.sunoModelName} />
                                       </div>
                                     </div>
 

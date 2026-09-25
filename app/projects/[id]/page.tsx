@@ -1,4 +1,5 @@
 "use client"
+import { MusicModelBadge } from "@/components/music-model-badge"
 
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
@@ -137,6 +138,7 @@ interface Track {
   wavPath: string | null
   coverPath: string | null
   sunoImageUrl: string | null
+  sunoModelName: string | null
   sunoSourceImageUrl: string | null
   versionName: string | null
   suggestedVersionName: string | null
@@ -1261,6 +1263,7 @@ export default function ProjectDetail() {
                                         ) : null
                                       })()}
                                       <span className="font-medium text-sm">Track {ti + 1}</span>
+                                      <MusicModelBadge model={track.sunoModelName} />
                                       <button
                                         title={track.isFavorite ? "Favorit entfernen" : "Als besten Track markieren"}
                                         onClick={async () => {
