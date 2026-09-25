@@ -1,4 +1,5 @@
 import { MusicGenerationProvider, SongInput, JobStatus, AudioFile, WavConversionStatus } from "./interface"
+import { resolveLatestSunoModel } from "./suno-model"
 
 type SunoApiTrack = {
   id: string
@@ -32,6 +33,8 @@ export class SunoApiOrgProvider implements MusicGenerationProvider {
   }
 
   async createSong(input: SongInput): Promise<{ jobId: string }> {
+    const model = await resolveLatestSunoModel()
+    console.log(`[Suno] Generating with latest standard model: ${model}`)
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "")
     const response = await fetch(`${this.baseUrl}/generate`, {
       method: "POST",
@@ -39,11 +42,11 @@ export class SunoApiOrgProvider implements MusicGenerationProvider {
       body: JSON.stringify({
         customMode: true,
         instrumental: !input.lyrics,
-        prompt: input.lyrics || "",
+        lyrics: input.lyrics || "",
         style: input.stylePrompt,
         title: input.title,
         negativeTags: input.negativePrompt || "",
-        model: process.env.SUNOAPI_ORG_MODEL || "V5_5",
+        model,
         callBackUrl: `${appUrl}/api/webhook/sunoapi-org`,
       }),
     })
@@ -54,7 +57,7 @@ export class SunoApiOrgProvider implements MusicGenerationProvider {
     }
 
     const data = await response.json()
-    if (!data?.data?.taskId) {
+    if (data?.code !== 200 || !data?.data?.taskId) {
       throw new Error(`sunoapi.org: unexpected response shape: ${JSON.stringify(data)}`)
     }
     return { jobId: data.data.taskId }
