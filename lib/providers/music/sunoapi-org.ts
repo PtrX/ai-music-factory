@@ -110,7 +110,7 @@ export class SunoApiOrgProvider implements MusicGenerationProvider {
     const data = await response.json()
     const sunoData: SunoApiTrack[] = data?.data?.response?.sunoData || []
 
-    return mapSunoApiTracks(jobId, sunoData)
+    return mapSunoApiTracks(jobId, sunoData, requestedSunoModel(data?.data?.param))
   }
 
   async createWavConversion(taskId: string, audioId: string): Promise<{ jobId: string }> {
@@ -160,7 +160,15 @@ export function mapWavConversionRecord(data: any): WavConversionStatus {
   return { status: "processing" }
 }
 
-export function mapSunoApiTracks(jobId: string, sunoData: SunoApiTrack[]): AudioFile[] {
+export function requestedSunoModel(param: unknown): string | undefined {
+  try {
+    const parsed = typeof param === "string" ? JSON.parse(param) : param
+    const model = (parsed as { model?: unknown } | null)?.model
+    return typeof model === "string" && /^V\d+(?:_\d+)*(?:_[A-Z]+)?$/.test(model) ? model : undefined
+  } catch { return undefined }
+}
+
+export function mapSunoApiTracks(jobId: string, sunoData: SunoApiTrack[], requestedModel?: string): AudioFile[] {
   return sunoData
     .filter((s) => s.audioUrl)
     .map((s, i) => ({
@@ -168,7 +176,7 @@ export function mapSunoApiTracks(jobId: string, sunoData: SunoApiTrack[]): Audio
       url: s.audioUrl,
       providerTaskId: jobId,
       providerAudioId: s.id,
-      providerModelName: s.modelName,
+      providerModelName: requestedModel ?? s.modelName,
       providerAudioUrl: s.audioUrl,
       providerSourceAudioUrl: s.sourceAudioUrl,
       providerImageUrl: s.imageUrl,
